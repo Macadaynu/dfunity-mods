@@ -14,7 +14,7 @@ namespace Assets.Scripts.MyMods
 {
     public class HotkeysInventoryWindow : DaggerfallInventoryWindow
     {
-        //TODO: Refactor this whole class
+        //TODO: Refactor this class
 
         #region Constructors
 
