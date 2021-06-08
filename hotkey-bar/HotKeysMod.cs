@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Game.MacadaynuMods.HotkeyBar;
 using Assets.Scripts.MyMods;
+using DaggerfallConnect.Arena2;
 using DaggerfallWorkshop.Game;
 using DaggerfallWorkshop.Game.Items;
 using DaggerfallWorkshop.Game.MagicAndEffects;
@@ -13,6 +14,7 @@ using DaggerfallWorkshop.Game.Utility.ModSupport;
 using DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings;
 using UnityEngine;
 using Wenzil.Console;
+using static DaggerfallWorkshop.Game.UserInterfaceWindows.DaggerfallInventoryWindow;
 
 public class HotkeysMod : MonoBehaviour, IHasModSaveData
 {
@@ -72,21 +74,10 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         // assign empty hotkeys if none exist
         if (hotkeys == null)
         {
-            hotkeys = new Dictionary<KeyCode, Hotkey>
-            {
-                {KeyCode.Alpha1, null},
-                {KeyCode.Alpha2, null},
-                {KeyCode.Alpha3, null},
-                {KeyCode.Alpha4, null},
-                {KeyCode.Alpha5, null},
-                {KeyCode.Alpha6, null},
-                {KeyCode.Alpha7, null},
-                {KeyCode.Alpha8, null},
-                {KeyCode.Alpha9, null}
-            };
+            hotkeys = GetBlankHotkeys();
         }
 
-        UIWindowFactory.RegisterCustomUIWindow(UIWindowType.Inventory, typeof(HotkeysInventoryWindow));
+        //UIWindowFactory.RegisterCustomUIWindow(UIWindowType.Inventory, typeof(HotkeysInventoryWindow));
         UIWindowFactory.RegisterCustomUIWindow(UIWindowType.SpellBook, typeof(HotkeysSpellBookWindow));
 
         var daggerfallUI = GameObject.Find("DaggerfallUI").GetComponent<DaggerfallUI>();
@@ -99,6 +90,42 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         };
 
         daggerfallUI.DaggerfallHUD.NativePanel.Components.Add(hotkeysPanel);
+
+        //DaggerfallUI.Instance.InventoryWindow.OnItemHover += ItemHoverHandler;
+        //DaggerfallUI.Instance.InventoryWindow.OnClose += OnInventoryClose;
+
+        DaggerfallUI.Instance.OnInstantiatePersistentWindowInstances += OnInstantiatePersistentWindowInstances_ItemHoverHandler;
+        DaggerfallUI.Instance.OnInstantiatePersistentWindowInstances += OnInstantiatePersistentWindowInstances_OnInventoryClose;
+    }
+
+    void OnInstantiatePersistentWindowInstances_ItemHoverHandler()
+    {
+        DaggerfallUI.Instance.InventoryWindow.OnItemHover += ItemHoverHandler;
+    }
+
+    void ItemHoverHandler(DaggerfallUnityItem item, ItemHoverLocation loc)
+    {
+        if (loc == ItemHoverLocation.LocalList || loc == ItemHoverLocation.Paperdoll)
+        {
+            hotkeySelectionId = (int)item.UID;
+            hoveredItem = item;
+        }
+        else
+        {
+            hotkeySelectionId = null;
+            hoveredItem = null;
+        }
+    }
+
+    void OnInstantiatePersistentWindowInstances_OnInventoryClose()
+    {
+        DaggerfallUI.Instance.InventoryWindow.OnClose += OnInventoryClose;
+    }
+
+    public void OnInventoryClose()
+    {
+        hotkeySelectionId = null;
+        hoveredItem = null;
     }
 
     // Update is called once per frame
@@ -152,12 +179,12 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
             HandleInput(KeyCode.Alpha9);
         }
 
-        if (Input.GetKeyDown(KeyCode.Minus))
+        if (Input.GetKeyDown(KeyCode.Alpha0))
         {
             // Raise event
             if (OnHotkeyPressed != null)
             {
-                OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Minus));
+                OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Alpha0));
             }
         }
     }
@@ -176,7 +203,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
             {
                 hotkeyType = HotkeyType.Spell;
             }
-            else if (uiType == typeof(HotkeysInventoryWindow))
+            else if (uiType == typeof(DaggerfallInventoryWindow) || (uiType?.IsSubclassOf(typeof(DaggerfallInventoryWindow)) ?? false))
             {
                 if (hoveredItem.ItemGroup == ItemGroups.Weapons && hoveredItem.GroupIndex != 18) // group index 18 is for arrows
                 {
@@ -186,6 +213,25 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
                 {
                     hotkeyType = HotkeyType.Potion;
                 }
+
+                var tokens = new List<TextFile.Token>();
+
+                if (hotkeyType.HasValue)
+                {
+                    tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.Text, text = $"{hoveredItem.LongName} has been assigned to Hotkey: {keyCode.ToString().Last()}" });
+                }
+                else
+                {
+                    tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.Text, text = $"You can only map weapons, potions or spells to hotkeys" });
+                }
+
+                tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.JustifyCenter });
+
+                DaggerfallMessageBox messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager, DaggerfallMessageBox.CommonMessageBoxButtons.Nothing, tokens.ToArray(), DaggerfallUI.Instance.InventoryWindow);
+                messageBox.ClickAnywhereToClose = true;
+                messageBox.AllowCancel = false;
+                messageBox.ParentPanel.BackgroundColor = Color.clear;
+                DaggerfallUI.UIManager.PushWindow(messageBox);
             }
 
             if (hotkeyType.HasValue)
@@ -325,7 +371,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     {
         return new HotkeysSaveData
         {
-            HotkeysSerialized = hotkeys
+            HotkeysSerialized = GetBlankHotkeys()
         };
     }
 
@@ -341,5 +387,21 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     {
         var hotkeysSaveData = (HotkeysSaveData)saveData;
         hotkeys = hotkeysSaveData.HotkeysSerialized;
+    }
+
+    Dictionary<KeyCode, Hotkey> GetBlankHotkeys()
+    {
+        return new Dictionary<KeyCode, Hotkey>
+            {
+                {KeyCode.Alpha1, null},
+                {KeyCode.Alpha2, null},
+                {KeyCode.Alpha3, null},
+                {KeyCode.Alpha4, null},
+                {KeyCode.Alpha5, null},
+                {KeyCode.Alpha6, null},
+                {KeyCode.Alpha7, null},
+                {KeyCode.Alpha8, null},
+                {KeyCode.Alpha9, null}
+            };
     }
 }
