@@ -1,3 +1,5 @@
+using DaggerfallWorkshop.Game.MagicAndEffects;
+
 namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
 {
     public class Hotkey
@@ -6,6 +8,6 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
 
         public HotkeyType Type { get; set; }
 
-        public string SpellName { get; set; }
+        public EffectBundleSettings Spell { get; set; }
     }
 }
