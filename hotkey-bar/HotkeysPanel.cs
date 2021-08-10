@@ -9,6 +9,7 @@ using DaggerfallWorkshop.Game.Items;
 using DaggerfallWorkshop.Game.MagicAndEffects;
 using DaggerfallWorkshop.Game.Serialization;
 using DaggerfallWorkshop.Game.UserInterface;
+using DaggerfallWorkshop.Game.UserInterfaceWindows;
 using UnityEngine;
 
 namespace Assets.Scripts.MyMods
@@ -20,7 +21,8 @@ namespace Assets.Scripts.MyMods
     {
         #region Fields
 
-        const int maxIconPool = 9;
+        static int maxIconPool = HotkeysMod.instance.MaxHotkeyBarSize;
+        bool displayHotkeyBar = true;
 
         class IconsPositioning
         {
@@ -93,7 +95,7 @@ namespace Assets.Scripts.MyMods
         {
             var windowType = DaggerfallUI.Instance.UserInterfaceManager.TopWindow.GetType();
 
-            if (windowType == typeof(HotkeysInventoryWindow) || windowType == typeof(HotkeysSpellBookWindow))
+            if (windowType == typeof(DaggerfallInventoryWindow) || windowType == typeof(HotkeysSpellBookWindow) || (windowType?.IsSubclassOf(typeof(DaggerfallInventoryWindow)) ?? false))
             {
                 UpdateIcons();
             }
@@ -101,9 +103,12 @@ namespace Assets.Scripts.MyMods
             {
                 var hotkeyEventArgs = (HotkeysMod.HotkeyEventArgs) e;
 
-                UpdateIcons(hotkeyEventArgs.HotKeyCode == KeyCode.Minus);
+                UpdateIcons(hotkeyEventArgs.HotKeyCode == KeyCode.Alpha0);
 
-                FlashIcon(hotkeyEventArgs.HotKeyCode);
+                if (hotkeyEventArgs.HotKeyCode != KeyCode.Minus && hotkeyEventArgs.HotKeyCode != KeyCode.Equals)
+                {
+                    FlashIcon(hotkeyEventArgs.HotKeyCode);
+                }
             }
         }
 
@@ -118,7 +123,7 @@ namespace Assets.Scripts.MyMods
 
         private async Task FlashHotkey(Panel panel)
         {
-            var color = new Color(panel.BackgroundColor.r, panel.BackgroundColor.g, panel.BackgroundColor.b, panel.BackgroundColor.a);
+            var color = new Color(0, 0, 0, 0.5f); // faded black
 
             await Fade(panel, 0f, Color.white);
             await Fade(panel, 0.5f, color);
@@ -168,17 +173,53 @@ namespace Assets.Scripts.MyMods
 
         void InitIcons()
         {
-            selfIconsPositioning = new IconsPositioning(new Vector2(16, 16), new Vector2(50, 183), new Vector2(24, 0), new Vector2(0, 24), 9);
+            // move the hotkeys to align with max hotkey bar size
+            int originX;
+            switch (HotkeysMod.instance.MaxHotkeyBarSize)
+            {
+                case 1:
+                    originX = 150;
+                    break;
+                case 2:
+                    originX = 140;
+                    break;
+                case 3:
+                    originX = 130;
+                    break;
+                case 4:
+                    originX = 115;
+                    break;
+                case 5:
+                    originX = 100;
+                    break;
+                case 6:
+                    originX = 90;
+                    break;
+                case 7:
+                    originX = 80;
+                    break;
+                case 8:
+                    originX = 70;
+                    break;
+                case 9:
+                    originX = 50;
+                    break;
+                default:
+                    originX = 50;
+                    break;
+            }
+
+            selfIconsPositioning = new IconsPositioning(new Vector2(16, 16), new Vector2(originX, 183), new Vector2(24, 0), new Vector2(0, 24), maxIconPool);
 
             // Setup default tooltip
-            if (DaggerfallUnity.Settings.EnableToolTips)
-            {
-                defaultToolTip = new ToolTip();
-                defaultToolTip.ToolTipDelay = DaggerfallUnity.Settings.ToolTipDelayInSeconds;
-                defaultToolTip.BackgroundColor = DaggerfallUnity.Settings.ToolTipBackgroundColor;
-                defaultToolTip.TextColor = DaggerfallUnity.Settings.ToolTipTextColor;
-                defaultToolTip.Parent = this;
-            }
+            //if (DaggerfallUnity.Settings.EnableToolTips)
+            //{
+            //    defaultToolTip = new ToolTip();
+            //    defaultToolTip.ToolTipDelay = DaggerfallUnity.Settings.ToolTipDelayInSeconds;
+            //    defaultToolTip.BackgroundColor = DaggerfallUnity.Settings.ToolTipBackgroundColor;
+            //    defaultToolTip.TextColor = DaggerfallUnity.Settings.ToolTipTextColor;
+            //    defaultToolTip.Parent = this;
+            //}
 
             // Setup icon panels
             for (int i = 0; i < iconPool.Length; i++)
@@ -188,7 +229,7 @@ namespace Assets.Scripts.MyMods
                     BackgroundColor = new Color(0, 0, 0, 0.5f), // faded black
                     AutoSize = AutoSizeModes.None,
                     Enabled = true,
-                    ToolTip = defaultToolTip
+                    //ToolTip = defaultToolTip
                 };
                 Components.Add(iconPool[i]);
             }
@@ -209,9 +250,11 @@ namespace Assets.Scripts.MyMods
         {
             if (toggleDisplay)
             {
+                displayHotkeyBar = !displayHotkeyBar;
+
                 for (int i = 0; i < iconPool.Length; i++)
                 {
-                    iconPool[i].Enabled = !iconPool[i].Enabled;
+                    iconPool[i].Enabled = displayHotkeyBar;
 
                     //var color = new Color(iconPool[i].BackgroundColor.r, iconPool[i].BackgroundColor.g, iconPool[i].BackgroundColor.b, 0.0f);
                     //Fade(iconPool[i], 0.0f, color);
@@ -236,8 +279,24 @@ namespace Assets.Scripts.MyMods
                 {
                     switch (assignedHotkey.Value.Type)
                     {
-                        case HotkeyType.Weapon:
-                        case HotkeyType.Potion:
+                        case HotkeyType.Spell:
+                            hotkey.icon = assignedHotkey.Value.Spell.Icon;
+                            hotkey.iconIndex = assignedHotkey.Value.Spell.IconIndex;
+                            hotkey.displayName = assignedHotkey.Value.Spell.Name;
+                            break;
+                        case HotkeyType.CampingEquipment:
+                            var tent = HotkeysMod.instance.GetItemByTemplateIndex(ItemGroups.UselessItems2, 530, false);
+                            // Debug.Log($"TENT IS NULL: {tent == null}");
+
+                            hotkey = AddItemInfoToPanel(tent, hotkey);
+                            break;
+                        case HotkeyType.Meat:
+                            var meat = HotkeysMod.instance.GetItemByTemplateIndex(ItemGroups.UselessItems2, 537, true);
+                            // Debug.Log($"MEAT IS NULL: {meat == null}");
+
+                            hotkey = AddItemInfoToPanel(meat, hotkey);
+                            break;
+                        default:
                             var item = GameManager.Instance.PlayerEntity.Items.GetItem((ulong)assignedHotkey.Value.Id);
                             if (item != null)
                             {
@@ -247,32 +306,6 @@ namespace Assets.Scripts.MyMods
                                 hotkey.item = item;
                                 hotkey.displayName = item.LongName;
                             }
-                            break;
-                        case HotkeyType.Spell:
-
-                            //TODO: Can this be done by a spell id, rather than name?
-                            var spellSettings = new EffectBundleSettings();
-                            EffectBundleSettings[] spellbook = GameManager.Instance.PlayerEntity.GetSpells();
-
-                            for (int x = 0; x < spellbook.Length; x++)
-                            {
-                                if (spellbook[x].Name == assignedHotkey.Value.SpellName)
-                                {
-                                    if (!GameManager.Instance.PlayerEntity.GetSpell(x, out spellSettings))
-                                    {
-                                        return;
-                                    }
-                                    else
-                                    {
-                                        break;
-                                    }
-                                }
-                            }
-
-                            //GameManager.Instance.PlayerEntity.GetSpell(assignedHotkey.Value.Id, out spellSettings);
-                            hotkey.icon = spellSettings.Icon;
-                            hotkey.iconIndex = spellSettings.IconIndex;//assignedHotkey.Value.Id;
-                            hotkey.displayName = spellSettings.Name;
                             break;
                     }
                 }
@@ -288,6 +321,21 @@ namespace Assets.Scripts.MyMods
             AlignIcons(activeSelfList, selfIconsPositioning);
         }
 
+        ActiveHotkey AddItemInfoToPanel(DaggerfallUnityItem item, ActiveHotkey hotkey)
+        {
+            if (item != null)
+            {
+                var imageData = DaggerfallUnity.Instance.ItemHelper.GetItemImage(item);
+
+                hotkey.iconIndex = imageData.record;
+                hotkey.imageData = imageData;
+                hotkey.item = item;
+                hotkey.displayName = item.LongName;
+            }
+
+            return hotkey;
+        }
+
         void AlignIcons(List<ActiveHotkey> icons, IconsPositioning iconsPositioning)
         {
             Vector2 rowOrigin = iconsPositioning.origin;
@@ -299,6 +347,7 @@ namespace Assets.Scripts.MyMods
 
                 icon.Components.Clear();
 
+                // add the hotkey number label
                 var hotkeyNumber = DaggerfallUI.AddTextLabel(DaggerfallUI.Instance.Font4, Vector2.zero, (hotkey.poolIndex + 1).ToString());
                 hotkeyNumber.HorizontalAlignment = HorizontalAlignment.Left;
                 hotkeyNumber.VerticalAlignment = VerticalAlignment.Top;
@@ -308,10 +357,24 @@ namespace Assets.Scripts.MyMods
                 icon.Components.Add(hotkeyNumber);
                 icon.BackgroundTextureLayout = BackgroundLayout.ScaleToFit;
 
+                // add the bank number label
+                if (hotkey.poolIndex == 0 && HotkeysMod.instance.MaxHotkeyBanks > 1)
+                {
+                    var hotkeyBankNumber = DaggerfallUI.AddTextLabel(DaggerfallUI.Instance.Font4, Vector2.zero, HotkeysMod.instance.CurrentHotkeyBank.ToString());
+                    hotkeyBankNumber.HorizontalAlignment = HorizontalAlignment.Left;
+                    hotkeyBankNumber.VerticalAlignment = VerticalAlignment.Bottom;
+                    hotkeyBankNumber.ShadowPosition = Vector2.zero;
+                    hotkeyBankNumber.TextScale = 0.75f;
+                    hotkeyBankNumber.TextColor = DaggerfallUI.DaggerfallUnityDefaultToolTipTextColor;
+                    icon.Components.Add(hotkeyBankNumber);
+                    icon.BackgroundTextureLayout = BackgroundLayout.ScaleToFit;
+                }
+
                 if (hotkey.item != null) //isItem instead?
                 {
                     icon.BackgroundTexture = DaggerfallUnity.Instance.ItemHelper.GetInventoryImage(hotkey.item).texture;
 
+                    // add stack amount label
                     if (hotkey.item.stackCount > 1)
                     {
                         var label = DaggerfallUI.AddTextLabel(DaggerfallUI.Instance.Font4, Vector2.zero, hotkey.item.stackCount.ToString());
@@ -329,7 +392,7 @@ namespace Assets.Scripts.MyMods
                 }
 
                 icon.ToolTipText = hotkey.displayName;
-                icon.Enabled = true;
+                icon.Enabled = displayHotkeyBar;
                 icon.Position = position;
                 AdjustIconPositionForLargeHUD(icon);
                 icon.Size = iconsPositioning.iconSize;
