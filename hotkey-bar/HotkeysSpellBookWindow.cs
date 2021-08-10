@@ -38,18 +38,15 @@ namespace Assets.Scripts.MyMods
                 messageBox.AllowCancel = false;
                 messageBox.ParentPanel.BackgroundColor = Color.clear;
                 DaggerfallUI.UIManager.PushWindow(messageBox);
-
-                //spellsListBox.SelectedValue.textLabel.Text = spellsListBox.SelectedValue.textLabel.Text + $" [{hotkeyEventArgs.HotKeyCode.ToString().Last()}]";
             }
         }
 
         #endregion
         public override void OnPush()
         {
-            base.OnPop();
+            base.OnPush();
 
             HotkeysMod.instance.hotkeySelectionId = 0;
-            HotkeysMod.instance.spellSelectionName = null;
         }
 
         public override void OnPop()
@@ -57,7 +54,6 @@ namespace Assets.Scripts.MyMods
             base.OnPop();
 
             HotkeysMod.instance.hotkeySelectionId = null;
-            HotkeysMod.instance.spellSelectionName = null;
         }
 
         protected override void UpdateSelection()
@@ -67,10 +63,6 @@ namespace Assets.Scripts.MyMods
             if (!buyMode)
             {
                 HotkeysMod.instance.hotkeySelectionId = spellsListBox.SelectedIndex;
-                HotkeysMod.instance.spellSelectionName = spellsListBox.SelectedItem?.Substring(spellsListBox.SelectedItem.IndexOf("-") + 1).Trim();
-
-                // Update spell name label
-                //spellNameLabel.Text = spellNameLabel.Text + " (Hotkey: 1)";
             }
         }
     }
