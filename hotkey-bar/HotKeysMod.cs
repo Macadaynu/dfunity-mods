@@ -4,7 +4,9 @@ using System.Linq;
 using Assets.Scripts.Game.MacadaynuMods.HotkeyBar;
 using Assets.Scripts.MyMods;
 using DaggerfallConnect.Arena2;
+using DaggerfallWorkshop;
 using DaggerfallWorkshop.Game;
+using DaggerfallWorkshop.Game.Formulas;
 using DaggerfallWorkshop.Game.Items;
 using DaggerfallWorkshop.Game.MagicAndEffects;
 using DaggerfallWorkshop.Game.Serialization;
@@ -24,7 +26,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     [FullSerializer.fsObject("v1")]
     public class HotkeysSaveData
     {
-        public Dictionary<KeyCode, Hotkey> HotkeysSerialized;
+        public List<Dictionary<KeyCode, Hotkey>> HotKeyBanksSerialized;
     }
     #endregion
 
@@ -36,7 +38,6 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
     public DaggerfallUnityItem hoveredItem;
     public int? hotkeySelectionId;
-    public string spellSelectionName;
 
     public Dictionary<KeyCode, Hotkey> hotkeys;
 
@@ -44,6 +45,14 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
     public event EventHandler OnHotkeyPressed;
     public event EventHandler OnHotkeyAssigned;
+
+    EntityEffectBundle spellToRearm;
+
+    public int MaxHotkeyBarSize { get; private set; }
+    public int MaxHotkeyBanks = 1;
+
+    public List<Dictionary<KeyCode, Hotkey>> hotkeyBanks;
+    public int CurrentHotkeyBank = 1; 
 
     //starts mod manager on game begin. Grabs mod initializing paramaters.
     //ensures SateTypes is set to .Start for proper save data restore values.
@@ -56,8 +65,6 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
         //initiates mod paramaters for class/script.
         mod = initParams.Mod;
-        //loads mods settings.
-        //settings = mod.GetSettings();
         //initiates save paramaters for class/script.
         mod.SaveDataInterface = instance;
         //after finishing, set the mod's IsReady flag to true.
@@ -67,17 +74,24 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     // Start is called before the first frame update
     void Start()
     {
+        //loads mod settings.
+        settings = mod.GetSettings();
+
+        MaxHotkeyBarSize = settings.GetValue<int>("HotkeyOptions", "MaxHotkeyBarSize");
+        MaxHotkeyBanks = settings.GetValue<int>("HotkeyOptions", "MaxHotkeyRows");
+
         // get the console controller so we can check if the user has the console open
         console = GameObject.Find("Console");
         consoleController = console.GetComponent<ConsoleController>();
 
-        // assign empty hotkeys if none exist
-        if (hotkeys == null)
+        // assign empty hotkey banks if none exist
+        if (hotkeyBanks == null)
         {
-            hotkeys = GetBlankHotkeys();
+            hotkeyBanks = GetBlankHotkeyBanks();
         }
 
-        //UIWindowFactory.RegisterCustomUIWindow(UIWindowType.Inventory, typeof(HotkeysInventoryWindow));
+        hotkeys = hotkeyBanks.ElementAt(CurrentHotkeyBank - 1);
+
         UIWindowFactory.RegisterCustomUIWindow(UIWindowType.SpellBook, typeof(HotkeysSpellBookWindow));
 
         var daggerfallUI = GameObject.Find("DaggerfallUI").GetComponent<DaggerfallUI>();
@@ -91,11 +105,10 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
         daggerfallUI.DaggerfallHUD.NativePanel.Components.Add(hotkeysPanel);
 
-        //DaggerfallUI.Instance.InventoryWindow.OnItemHover += ItemHoverHandler;
-        //DaggerfallUI.Instance.InventoryWindow.OnClose += OnInventoryClose;
-
         DaggerfallUI.Instance.OnInstantiatePersistentWindowInstances += OnInstantiatePersistentWindowInstances_ItemHoverHandler;
         DaggerfallUI.Instance.OnInstantiatePersistentWindowInstances += OnInstantiatePersistentWindowInstances_OnInventoryClose;
+
+        GameManager.Instance.PlayerEffectManager.OnCastReadySpell += OnCastReadySpell;
     }
 
     void OnInstantiatePersistentWindowInstances_ItemHoverHandler()
@@ -117,6 +130,14 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         }
     }
 
+    void OnCastReadySpell(EntityEffectBundle spell)
+    {
+        if (spellToRearm == null && spell.Settings.TargetType != TargetTypes.None && spell.Settings.TargetType != TargetTypes.CasterOnly)
+        {
+            spellToRearm = spell;
+        }
+    }
+
     void OnInstantiatePersistentWindowInstances_OnInventoryClose()
     {
         DaggerfallUI.Instance.InventoryWindow.OnClose += OnInventoryClose;
@@ -131,73 +152,159 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     // Update is called once per frame
     void Update()
     {
-        if (consoleController.ui.isConsoleOpen || SaveLoadManager.Instance.LoadInProgress)
-            return;
-
-        if (Input.GetKeyDown(KeyCode.Alpha1))
+        if (!GameManager.Instance.PlayerSpellCasting.IsPlayingAnim)
         {
-            HandleInput(KeyCode.Alpha1);
-        }
+            if (consoleController.ui.isConsoleOpen || SaveLoadManager.Instance.LoadInProgress)
+                return;
 
-        if (Input.GetKeyDown(KeyCode.Alpha2))
-        {
-            HandleInput(KeyCode.Alpha2);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha3))
-        {
-            HandleInput(KeyCode.Alpha3);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha4))
-        {
-            HandleInput(KeyCode.Alpha4);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha5))
-        {
-            HandleInput(KeyCode.Alpha5);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha6))
-        {
-            HandleInput(KeyCode.Alpha6);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha7))
-        {
-            HandleInput(KeyCode.Alpha7);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha8))
-        {
-            HandleInput(KeyCode.Alpha8);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha9))
-        {
-            HandleInput(KeyCode.Alpha9);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Alpha0))
-        {
-            // Raise event
-            if (OnHotkeyPressed != null)
+            if (!GameManager.IsGamePaused && DaggerfallUI.UIManager.WindowCount == 0)
             {
-                OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Alpha0));
+                if (MaxHotkeyBanks > 1)
+                {
+                    var mouseScrollWheel = Input.GetAxis("Mouse ScrollWheel");
+
+                    if (Input.GetKeyDown(KeyCode.Minus) || mouseScrollWheel < 0f)
+                    {
+                        if (CurrentHotkeyBank == 1)
+                        {
+                            CurrentHotkeyBank = MaxHotkeyBanks;
+                        }
+                        else
+                        {
+                            CurrentHotkeyBank -= 1;
+                        }
+
+                        hotkeys = hotkeyBanks.ElementAt(CurrentHotkeyBank - 1);
+
+                        if (OnHotkeyPressed != null)
+                        {
+                            OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Minus));
+                        }
+                    }
+
+                    if (Input.GetKeyDown(KeyCode.Equals) || mouseScrollWheel > 0f)
+                    {
+                        if (CurrentHotkeyBank == MaxHotkeyBanks)
+                        {
+                            CurrentHotkeyBank = 1;
+                        }
+                        else
+                        {
+                            CurrentHotkeyBank += 1;
+                        }
+
+                        hotkeys = hotkeyBanks.ElementAt(CurrentHotkeyBank - 1);
+
+                        if (OnHotkeyPressed != null)
+                        {
+                            OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Equals));
+                        }
+                    }
+                }
+
+                if (Input.GetKeyDown(KeyCode.Alpha0))
+                {
+                    // Raise event
+                    if (OnHotkeyPressed != null)
+                    {
+                        OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Alpha0));
+                    }
+                }
+            }
+
+            if (MaxHotkeyBarSize > 0)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha1))
+                {
+                    HandleInput(KeyCode.Alpha1);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 1)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha2))
+                {
+                    HandleInput(KeyCode.Alpha2);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 2)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha3))
+                {
+                    HandleInput(KeyCode.Alpha3);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 3)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha4))
+                {
+                    HandleInput(KeyCode.Alpha4);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 4)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha5))
+                {
+                    HandleInput(KeyCode.Alpha5);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 5)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha6))
+                {
+                    HandleInput(KeyCode.Alpha6);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 6)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha7))
+                {
+                    HandleInput(KeyCode.Alpha7);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 7)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha8))
+                {
+                    HandleInput(KeyCode.Alpha8);
+                }
+            }
+
+            if (MaxHotkeyBarSize > 8)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha9))
+                {
+                    HandleInput(KeyCode.Alpha9);
+                }
+            }
+
+            if (spellToRearm != null)
+            {
+                EntityEffectManager playerEffectManager = GameManager.Instance.PlayerEffectManager;
+                if (playerEffectManager && !playerEffectManager.HasReadySpell)
+                {
+                    playerEffectManager.SetReadySpell(spellToRearm);
+                    spellToRearm = null;
+                }
             }
         }
     }
 
     private void HandleInput(KeyCode keyCode)
     {
+        HotkeyType? hotkeyType = null;
         if (!GameManager.IsGamePaused && DaggerfallUI.UIManager.WindowCount == 0)
         {
             ActivateHotKey(keyCode);
         }
         else if (hotkeySelectionId.HasValue)
-        {
-            HotkeyType? hotkeyType = null;
+        {            
             var uiType = DaggerfallUI.UIManager.TopWindow.GetType();
             if (uiType == typeof(HotkeysSpellBookWindow))
             {
@@ -209,9 +316,55 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
                 {
                     hotkeyType = HotkeyType.Weapon;
                 }
+                else if (hoveredItem.ItemGroup == ItemGroups.Books && !hoveredItem.IsArtifact)
+                {
+                    hotkeyType = HotkeyType.Book;
+                }
+                else if (hoveredItem.TemplateIndex == (int)MiscItems.Spellbook)
+                {
+                    hotkeyType = HotkeyType.Spellbook;
+                }
+                else if (hoveredItem.ItemGroup == ItemGroups.Drugs)
+                {
+                    hotkeyType = HotkeyType.Drug;
+                }
                 else if (hoveredItem.IsPotion)
                 {
                     hotkeyType = HotkeyType.Potion;
+                }
+                else if (hoveredItem.ItemGroup == ItemGroups.Transportation)
+                {
+                    // TODO: change these to template indexes (add ship?)
+                    if (hoveredItem.ItemName == "Horse")
+                    {
+                        hotkeyType = HotkeyType.Horse;
+                    }
+                    if (hoveredItem.ItemName == "Small Cart")
+                    {
+                        hotkeyType = HotkeyType.Cart;
+                    }
+                }
+                else if (hoveredItem.IsLightSource)
+                {
+                    hotkeyType = HotkeyType.LightSource;
+                }
+                else if (hoveredItem.IsEnchanted)
+                {
+                    hotkeyType = HotkeyType.EnchantedItem;
+                }
+                else if (hoveredItem.ItemGroup == ItemGroups.UselessItems2 && hoveredItem.GroupIndex == 530) // check for calories and climate tents
+                {
+                    hotkeyType = HotkeyType.CampingEquipment;
+                }
+                else if (hoveredItem.ItemGroup == ItemGroups.UselessItems2 && hoveredItem.GroupIndex == 537) // check for calories and climate meat
+                {
+                    hotkeyType = HotkeyType.Meat;
+                }
+
+                // generic item should be last
+                else
+                {
+                    hotkeyType = HotkeyType.GenericItem;
                 }
 
                 var tokens = new List<TextFile.Token>();
@@ -222,7 +375,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
                 }
                 else
                 {
-                    tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.Text, text = $"You can only map weapons, potions or spells to hotkeys" });
+                    tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.Text, text = $"You cannot map the {hoveredItem.LongName}" });
                 }
 
                 tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.JustifyCenter });
@@ -236,7 +389,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
             if (hotkeyType.HasValue)
             {
-                AssignHotkey(keyCode, hotkeySelectionId.Value, hotkeyType.Value, spellSelectionName);
+                AssignHotkey(keyCode, hotkeySelectionId.Value, hotkeyType.Value);
             }
         }
 
@@ -261,34 +414,19 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
     #endregion
 
-    private void ActivateHotKey(KeyCode keyCode)
+    private void AssignHotkey(KeyCode keyCode, int selectionId, HotkeyType hotkeyType)
     {
-        var hotKey = hotkeys[keyCode];
+        var spellSettings = new EffectBundleSettings();
 
-        if (hotKey == null)
+        if (hotkeyType == HotkeyType.Spell)
         {
-            //TODO: Handle error
-        }
-        else
-        {
-            switch (hotKey.Type)
+            if (!GameManager.Instance.PlayerEntity.GetSpell(selectionId, out spellSettings))
             {
-                case HotkeyType.Weapon:
-                    EquipWeapon((ulong)hotKey.Id);
-                    break;
-                case HotkeyType.Potion:
-                    UsePotion((ulong)hotKey.Id);
-                    break;
-                case HotkeyType.Spell:
-                    SetSpellReady(hotKey.SpellName);
-                    break;
+                Debug.Log($"Unable to find spell with index: {selectionId}");
+                return;
             }
         }
-    }
 
-    private void AssignHotkey(KeyCode keyCode, int selectionId, HotkeyType hotkeyType, string spellSelectionName)
-    {
-        //TODO: Do this for spells as well
         // remove item from already existing hotkey assignment
         var assignedHotkey = hotkeys.FirstOrDefault(x => x.Value?.Id == selectionId && x.Value?.Type == hotkeyType);
         if (assignedHotkey.Value != null)
@@ -301,7 +439,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         {
             Id = selectionId,
             Type = hotkeyType,
-            SpellName = spellSelectionName
+            Spell = spellSettings
         };
 
         // Raise event
@@ -311,22 +449,114 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         }
     }
 
+    private void ActivateHotKey(KeyCode keyCode)
+    {
+        var hotKey = hotkeys[keyCode];
+
+        if (hotKey != null)
+        {
+            switch (hotKey.Type)
+            {
+                case HotkeyType.Weapon:
+                    EquipWeapon((ulong)hotKey.Id);
+                    break;
+                case HotkeyType.Potion:
+                    UsePotion((ulong)hotKey.Id);
+                    break;
+                case HotkeyType.Spell:
+                    SetSpellReady(hotKey.Spell);
+                    break;
+                case HotkeyType.Horse:
+                case HotkeyType.Cart:
+                    ToggleMount(hotKey.Type);
+                    break;
+                case HotkeyType.EnchantedItem:
+                    UseEnchantedItem((ulong)hotKey.Id);
+                    break;
+                case HotkeyType.LightSource:
+                    UseLightSource((ulong)hotKey.Id);
+                    break;
+                case HotkeyType.Book:
+                    UseBook((ulong)hotKey.Id);
+                    break;
+                case HotkeyType.Spellbook:
+                    UseSpellbook((ulong)hotKey.Id);
+                    break;
+                case HotkeyType.Drug:
+                    UseDrug((ulong)hotKey.Id);
+                    break;
+                case HotkeyType.CampingEquipment:
+                    UseItemByTemplateIndex(ItemGroups.UselessItems2, 530, false);
+                    break;
+                case HotkeyType.Meat:
+                    UseItemByTemplateIndex(ItemGroups.UselessItems2, 537, true);
+                    break;
+                case HotkeyType.GenericItem:
+                    UseItem((ulong)hotKey.Id);
+                    break;
+            }
+        }
+    }
+
     private void EquipWeapon(ulong itemId)
     {
-        //TODO: handle this being null
+        spellToRearm = null;
+
         var weapon = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
 
-        GameManager.Instance.PlayerEntity.ItemEquipTable.EquipItem(weapon);
-
-        if (GameManager.Instance.WeaponManager.Sheathed)
+        if (weapon != null)
         {
-            GameManager.Instance.WeaponManager.ToggleSheath();
+            var prohibited = false;
+
+            // Check for prohibited weapon type
+            if ((weapon.GetWeaponSkillUsed() & (int)GameManager.Instance.PlayerEntity.Career.ForbiddenProficiencies) != 0)
+                prohibited = true;
+            // Check for prohibited material
+            else if ((1 << weapon.NativeMaterialValue & (int)GameManager.Instance.PlayerEntity.Career.ForbiddenMaterials) != 0)
+                prohibited = true;
+
+            if (prohibited)
+            {
+                DaggerfallUI.MessageBox($"Your class prohibits you from equipping this weapon.");
+                return;
+            }
+
+            var hasArmedSpell = GameManager.Instance.PlayerEffectManager.HasReadySpell;
+
+            // cancel armed missile spell
+            GameManager.Instance.PlayerEffectManager.AbortReadySpell();
+            
+            if (GameManager.Instance.PlayerEntity.ItemEquipTable.IsEquipped(weapon))
+            {
+                // if switching from spell, unsheathe the weapon if sheathed
+                if (hasArmedSpell)
+                {
+                    if (GameManager.Instance.WeaponManager.Sheathed)
+                    {
+                        GameManager.Instance.WeaponManager.ToggleSheath();
+                    }
+                }
+                else
+                {
+                    // just sheathe/unsheathe the weapon if you are pressing a hotkey weapon already equipped
+                    GameManager.Instance.WeaponManager.ToggleSheath();
+                }
+            }
+            else
+            {
+                GameManager.Instance.PlayerEntity.ItemEquipTable.EquipItem(weapon);
+
+                // unsheathe weapon if sheathed
+                if (GameManager.Instance.WeaponManager.Sheathed)
+                {
+                    GameManager.Instance.WeaponManager.ToggleSheath();
+                }
+            }
         }
     }
 
     private void UsePotion(ulong itemId)
     {
-        //TODO: handle this being null
         var potion = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
 
         if (potion != null)
@@ -337,26 +567,162 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         }
     }
 
-    private void SetSpellReady(string spellName)
+    private void UseEnchantedItem(ulong itemId)
     {
-        // TODO: Can this be done with an id of the actual spell, rather than name?
+        var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
 
-        var spellSettings = new EffectBundleSettings();
-        EffectBundleSettings[] spellbook = GameManager.Instance.PlayerEntity.GetSpells();
-
-        for (int i = 0; i < spellbook.Length; i++)
+        if (item != null)
         {
-            if (spellbook[i].Name == spellName)
+            GameManager.Instance.PlayerEffectManager.DoItemEnchantmentPayloads(EnchantmentPayloadFlags.Used, item, GameManager.Instance.PlayerEntity.Items);
+        }
+    }
+
+    private void UseBook(ulong itemId)
+    {
+        var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
+
+        if (item != null)
+        {
+            DaggerfallUI.Instance.BookReaderWindow.OpenBook(item);
+            if (DaggerfallUI.Instance.BookReaderWindow.IsBookOpen)
             {
-                if (!GameManager.Instance.PlayerEntity.GetSpell(i, out spellSettings))
-                {
+                DaggerfallUI.PostMessage(DaggerfallUIMessages.dfuiOpenBookReaderWindow);
+            }
+            else
+            {
+                var messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager);
+                messageBox.SetText(TextManager.Instance.GetLocalizedText("bookUnavailable"));
+                messageBox.ClickAnywhereToClose = true;
+                DaggerfallUI.UIManager.PushWindow(messageBox);
+            }
+        }
+    }
+
+    private void UseSpellbook(ulong itemId)
+    {
+        var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
+
+        if (item != null)
+        {
+            if (GameManager.Instance.PlayerEntity.SpellbookCount() == 0)
+            {
+                // Player has no spells
+                TextFile.Token[] textTokens = DaggerfallUnity.Instance.TextProvider.GetRSCTokens(12); // no spells text id
+                DaggerfallMessageBox noSpells = new DaggerfallMessageBox(DaggerfallUI.UIManager);
+                noSpells.SetTextTokens(textTokens);
+                noSpells.ClickAnywhereToClose = true;
+                noSpells.Show();
+            }
+            else
+            {
+                // Show spellbook
+                DaggerfallUI.UIManager.PostMessage(DaggerfallUIMessages.dfuiOpenSpellBookWindow);
+            }
+        }
+    }
+
+    private void UseDrug(ulong itemId)
+    {
+        var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
+
+        if (item != null)
+        {
+            // Drug poison IDs are 136 through 139. Template indexes are 78 through 81, so add to that.
+            FormulaHelper.InflictPoison(GameManager.Instance.PlayerEntity, GameManager.Instance.PlayerEntity, (Poisons)item.TemplateIndex + 66, true);
+            GameManager.Instance.PlayerEntity.Items.RemoveItem(item);
+        }
+    }
+
+    private void UseItemByTemplateIndex(ItemGroups itemGroup, int templateIndex, bool useBestConditionFirst)
+    {
+        var item = GetItemByTemplateIndex(itemGroup, templateIndex, useBestConditionFirst);
+
+        if (item != null)
+        {
+            UseItem(item.UID);
+        }
+    }
+
+    public DaggerfallUnityItem GetItemByTemplateIndex(ItemGroups itemGroup, int templateIndex, bool useBestConditionFirst)
+    {
+        var itemsInInventory = GameManager.Instance.PlayerEntity.Items.SearchItems(itemGroup, templateIndex);
+
+        if (itemsInInventory.Any())
+        {
+            var orderedItems = itemsInInventory.OrderByDescending(x => x.currentCondition);
+
+            if (useBestConditionFirst)
+            {
+                return orderedItems.First();
+            }
+            else
+            {
+                return orderedItems.Last();
+            }
+        }
+        else
+        {
+            Debug.Log("None found in your inventory");
+        }
+
+        return null;
+    }
+
+    private void UseItem(ulong itemId)
+    {
+        var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
+
+        if (item != null)
+        {
+            // Try to handle use with a registered delegate
+            ItemHelper.ItemUseHandler itemUseHandler;
+            if (DaggerfallUnity.Instance.ItemHelper.GetItemUseHandler(item.TemplateIndex, out itemUseHandler))
+            {
+                if (itemUseHandler(item, GameManager.Instance.PlayerEntity.Items))
                     return;
+            }
+
+            if (!item.UseItem(GameManager.Instance.PlayerEntity.Items))
+            {
+                DaggerfallUI.MessageBox($"You cannot use the {item.LongName}");
+            }
+        }
+    }
+
+    private void UseLightSource(ulong itemId)
+    {
+        var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
+
+        if (item != null)
+        {
+            if (item.currentCondition > 0)
+            {
+                var playerEntity = GameManager.Instance.PlayerEntity;
+
+                if (playerEntity.LightSource == item)
+                {
+                    //DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("lightDouse"), false, item);
+                    playerEntity.LightSource = null;
                 }
                 else
                 {
-                    break;
+                    //DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("lightLight"), false, item);
+                    playerEntity.LightSource = item;
                 }
             }
+            else
+                DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("lightEmpty"), false, item);
+        }
+    }
+
+    private void SetSpellReady(EffectBundleSettings spellSettings)
+    {
+        if (GameManager.Instance.PlayerEffectManager.HasReadySpell &&
+            GameManager.Instance.PlayerEffectManager.ReadySpell.Settings.Equals(spellSettings))
+        {
+            // cancel missile spell if already armed
+            GameManager.Instance.PlayerEffectManager.AbortReadySpell();
+            return;
         }
 
         EntityEffectManager playerEffectManager = GameManager.Instance.PlayerEffectManager;
@@ -367,11 +733,53 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         }
     }
 
+    private void ToggleMount(HotkeyType hotkeyType)
+    {
+        if (GameManager.Instance.IsPlayerInside)
+        {
+            DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("cannotChangeTransportationIndoors"));
+            return;
+        }
+
+        var transportMode = GameManager.Instance.TransportManager.TransportMode;
+
+        if (hotkeyType == HotkeyType.Horse)
+        {
+            if (transportMode == TransportModes.Horse)
+            {
+                GameManager.Instance.TransportManager.TransportMode = TransportModes.Foot;
+            }
+            else
+            {
+                GameManager.Instance.TransportManager.TransportMode = TransportModes.Horse;
+            }
+        }
+
+        if (hotkeyType == HotkeyType.Cart)
+        {
+            if (transportMode == TransportModes.Cart)
+            {
+                GameManager.Instance.TransportManager.TransportMode = TransportModes.Foot;
+            }
+            else
+            {
+                GameManager.Instance.TransportManager.TransportMode = TransportModes.Cart;
+            }
+        }
+    }
+
     public object NewSaveData()
     {
+        var hotkeyBanksSerialized = new List<Dictionary<KeyCode, Hotkey>>();
+
+        for (int i = 0; i < MaxHotkeyBanks; i++)
+        {
+            hotkeyBanksSerialized.Add(GetBlankHotkeys());
+        }
+
         return new HotkeysSaveData
         {
-            HotkeysSerialized = GetBlankHotkeys()
+            HotKeyBanksSerialized = hotkeyBanksSerialized
         };
     }
 
@@ -379,19 +787,65 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     {
         return new HotkeysSaveData
         {
-            HotkeysSerialized = hotkeys
+            HotKeyBanksSerialized = hotkeyBanks
         };
     }
 
     public void RestoreSaveData(object saveData)
     {
         var hotkeysSaveData = (HotkeysSaveData)saveData;
-        hotkeys = hotkeysSaveData.HotkeysSerialized;
+
+        if (hotkeysSaveData.HotKeyBanksSerialized != null)
+        {
+            hotkeyBanks = hotkeysSaveData.HotKeyBanksSerialized.Take(MaxHotkeyBanks).ToList();
+
+            // add empty banks if there are more banks than previous save
+            if (hotkeyBanks.Count < MaxHotkeyBanks)
+            {
+                var hotkeyDifference = MaxHotkeyBanks - hotkeyBanks.Count;
+                for (int i = 0; i < hotkeyDifference; i++)
+                {
+                    hotkeyBanks.Add(GetBlankHotkeys());
+                }
+            }
+            
+            for (int i = 0; i < hotkeyBanks.Count; i++)
+            {
+                hotkeyBanks[i] = hotkeyBanks[i].Take(MaxHotkeyBarSize).ToDictionary(x => x.Key, x => x.Value);
+
+                // need to add empty hotkeys if MaxHotkeyBarSize is bigger than last save
+                if (MaxHotkeyBarSize > hotkeyBanks[i].Count)
+                {
+                    hotkeyBanks[i] = GetBlankHotkeys().Concat(hotkeyBanks[i])
+                      .GroupBy(kvp => kvp.Key, kvp => kvp.Value)
+                      .ToDictionary(g => g.Key, g => g.Last());
+                }
+            }
+
+            hotkeys = hotkeyBanks.First();
+        }
+        else
+        {
+            hotkeyBanks = GetBlankHotkeyBanks();
+            hotkeys = GetBlankHotkeys();
+        }
+    }
+
+    List<Dictionary<KeyCode, Hotkey>> GetBlankHotkeyBanks()
+    {
+        var banks = new List<Dictionary<KeyCode, Hotkey>>();
+
+        for (int i = 0; i < MaxHotkeyBanks; i++)
+        {
+            banks.Add(GetBlankHotkeys());
+        }
+
+        return banks;
     }
 
     Dictionary<KeyCode, Hotkey> GetBlankHotkeys()
     {
-        return new Dictionary<KeyCode, Hotkey>
+        var hotkeys = new Dictionary<KeyCode, Hotkey>
             {
                 {KeyCode.Alpha1, null},
                 {KeyCode.Alpha2, null},
@@ -403,5 +857,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
                 {KeyCode.Alpha8, null},
                 {KeyCode.Alpha9, null}
             };
+
+        return hotkeys.Take(MaxHotkeyBarSize).ToDictionary(x => x.Key, x => x.Value);
     }
 }
