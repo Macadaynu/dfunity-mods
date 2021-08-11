@@ -44,7 +44,6 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     public Type SaveDataType { get { return typeof(HotkeysSaveData); } }
 
     public event EventHandler OnHotkeyPressed;
-    public event EventHandler OnHotkeyAssigned;
 
     EntityEffectBundle spellToRearm;
 
@@ -67,6 +66,8 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         mod = initParams.Mod;
         //initiates save paramaters for class/script.
         mod.SaveDataInterface = instance;
+        // initiates mod message handler
+        mod.MessageReceiver = DFModMessageReceiver;
         //after finishing, set the mod's IsReady flag to true.
         mod.IsReady = true;
     }
@@ -296,6 +297,45 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         }
     }
 
+    static void DFModMessageReceiver(string message, object data, DFModMessageCallback callBack)
+    {
+        switch (message)
+        {
+            // Other mod sends hotkey parameters, and it gets registered as a new hotkey at the selected keycode
+            // Parameter: Tuple<KeyCode, int, string>
+            // - KeyCode: key the selected item is assigned to
+            // - int: selection id. For spells, this is the position in the spellbook. For items, this is the item's UID
+            // - string: HotkeyType enum value
+            case "RegisterHotkey":
+                Tuple<KeyCode, int, string> args = data as Tuple<KeyCode, int, string>;
+                if (args == null)
+                {
+                    callBack?.Invoke(message, "Invalid arguments, expected Tuple<KeyCode, int, string>");
+                    return;
+                }
+
+                var (keyCode, selectionId, hotkeyType) = args.ToValueTuple();
+                if (!Enum.TryParse(hotkeyType, out HotkeyType parsedValue))
+                {
+                    callBack?.Invoke(message, $"Invalid hotkey type '{hotkeyType}'");
+                    return;
+                }
+
+                instance.AssignHotkey(keyCode, selectionId, parsedValue);
+
+                callBack?.Invoke(message, null);
+                break;
+
+            case "GetMaxHotkeyBarSize":
+                callBack?.Invoke(message, instance.MaxHotkeyBarSize);
+                break;
+
+            default:
+                callBack?.Invoke(message, "Unknown message");
+                break;
+        }
+    }
+
     private void HandleInput(KeyCode keyCode)
     {
         HotkeyType? hotkeyType = null;
@@ -360,36 +400,28 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
                 {
                     hotkeyType = HotkeyType.Meat;
                 }
-
                 // generic item should be last
                 else
                 {
                     hotkeyType = HotkeyType.GenericItem;
                 }
+            }
 
-                var tokens = new List<TextFile.Token>();
-
-                if (hotkeyType.HasValue)
-                {
-                    tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.Text, text = $"{hoveredItem.LongName} has been assigned to Hotkey: {keyCode.ToString().Last()}" });
-                }
-                else
-                {
-                    tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.Text, text = $"You cannot map the {hoveredItem.LongName}" });
-                }
-
-                tokens.Add(new TextFile.Token { formatting = TextFile.Formatting.JustifyCenter });
+            if (hotkeyType.HasValue)
+            {
+                AssignHotkey(keyCode, hotkeySelectionId.Value, hotkeyType.Value);
+            }
+            else
+            {
+                var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(TextFile.Formatting.JustifyCenter,
+                    $"You cannot map the {hoveredItem.LongName}"
+                );
 
                 DaggerfallMessageBox messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager, DaggerfallMessageBox.CommonMessageBoxButtons.Nothing, tokens.ToArray(), DaggerfallUI.Instance.InventoryWindow);
                 messageBox.ClickAnywhereToClose = true;
                 messageBox.AllowCancel = false;
                 messageBox.ParentPanel.BackgroundColor = Color.clear;
                 DaggerfallUI.UIManager.PushWindow(messageBox);
-            }
-
-            if (hotkeyType.HasValue)
-            {
-                AssignHotkey(keyCode, hotkeySelectionId.Value, hotkeyType.Value);
             }
         }
 
@@ -414,10 +446,12 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
     #endregion
 
+        
     private void AssignHotkey(KeyCode keyCode, int selectionId, HotkeyType hotkeyType)
     {
         var spellSettings = new EffectBundleSettings();
 
+        // Show the "hotkey assigned" dialog
         if (hotkeyType == HotkeyType.Spell)
         {
             if (!GameManager.Instance.PlayerEntity.GetSpell(selectionId, out spellSettings))
@@ -425,6 +459,28 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
                 Debug.Log($"Unable to find spell with index: {selectionId}");
                 return;
             }
+
+            var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(TextFile.Formatting.JustifyCenter,
+                $"{spellSettings.Name} has been assigned to Hotkey: {keyCode.ToString().Last()}"
+                );
+
+            DaggerfallMessageBox messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager, DaggerfallMessageBox.CommonMessageBoxButtons.Nothing, tokens, DaggerfallUI.UIManager.TopWindow);
+            messageBox.ClickAnywhereToClose = true;
+            messageBox.AllowCancel = false;
+            messageBox.ParentPanel.BackgroundColor = Color.clear;
+            DaggerfallUI.UIManager.PushWindow(messageBox);
+        }
+        else
+        {
+            var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(TextFile.Formatting.JustifyCenter,
+                $"{hoveredItem.LongName} has been assigned to Hotkey: {keyCode.ToString().Last()}"
+                );
+
+            DaggerfallMessageBox messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager, DaggerfallMessageBox.CommonMessageBoxButtons.Nothing, tokens.ToArray(), DaggerfallUI.UIManager.TopWindow);
+            messageBox.ClickAnywhereToClose = true;
+            messageBox.AllowCancel = false;
+            messageBox.ParentPanel.BackgroundColor = Color.clear;
+            DaggerfallUI.UIManager.PushWindow(messageBox);
         }
 
         // remove item from already existing hotkey assignment
@@ -441,12 +497,6 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
             Type = hotkeyType,
             Spell = spellSettings
         };
-
-        // Raise event
-        if (OnHotkeyAssigned != null)
-        {
-            OnHotkeyAssigned(this, new HotkeyEventArgs(keyCode));
-        }
     }
 
     private void ActivateHotKey(KeyCode keyCode)

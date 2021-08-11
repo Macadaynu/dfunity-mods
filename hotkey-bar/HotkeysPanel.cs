@@ -95,7 +95,7 @@ namespace Assets.Scripts.MyMods
         {
             var windowType = DaggerfallUI.Instance.UserInterfaceManager.TopWindow.GetType();
 
-            if (windowType == typeof(DaggerfallInventoryWindow) || windowType == typeof(HotkeysSpellBookWindow) || (windowType?.IsSubclassOf(typeof(DaggerfallInventoryWindow)) ?? false))
+            if (windowType == typeof(DaggerfallInventoryWindow) || windowType == typeof(DaggerfallSpellBookWindow) || (windowType?.IsSubclassOf(typeof(DaggerfallSpellBookWindow)) ?? false || (windowType?.IsSubclassOf(typeof(DaggerfallInventoryWindow)) ?? false)))
             {
                 UpdateIcons();
             }
