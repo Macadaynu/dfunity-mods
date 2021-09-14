@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,17 +22,20 @@ namespace Assets.Scripts.MyMods
     {
         #region Fields
 
-        static int maxIconPool = HotkeysMod.instance.MaxHotkeyBarSize;
-        bool displayHotkeyBar = true;
+        public int panelSize = 16;
+        public int panelXAxis;
+        public int panelYAxis = 183;
+        public int columnStep = 24;
+
+        //public int maxIconPool = HotkeysMod.instance.MaxHotkeyBarSize;
+        public bool displayHotkeyBar = true;
 
         class IconsPositioning
         {
             public readonly Vector2 iconSize;
-
             public readonly Vector2 origin;
             public readonly Vector2 columnStep;
             public readonly Vector2 rowStep;
-
             public readonly int iconColumns;
 
             public IconsPositioning(Vector2 iconSize, Vector2 origin, Vector2 columnStep, Vector2 rowStep, int iconColumns)
@@ -46,7 +50,7 @@ namespace Assets.Scripts.MyMods
 
         IconsPositioning selfIconsPositioning;
 
-        Panel[] iconPool = new Panel[maxIconPool];
+        Panel[] iconPool;
         List<ActiveHotkey> activeSelfList = new List<ActiveHotkey>();
 
         ToolTip defaultToolTip = null;
@@ -78,11 +82,13 @@ namespace Assets.Scripts.MyMods
         public HotkeysPanel()
             : base()
         {
+            iconPool = new Panel[HotkeysMod.instance.MaxHotkeyBarSize];
+
             AutoSize = AutoSizeModes.None;
             DaggerfallUI.Instance.UserInterfaceManager.OnWindowChange += UpdateIconsHandler;
             HotkeysMod.instance.OnHotkeyPressed += UpdateIconsHandler;
 
-            SaveLoadManager.OnLoad += SaveLoadManager_OnLoad;
+            panelXAxis = GetDefaultXAxis(HotkeysMod.instance.MaxHotkeyBarSize);
 
             InitIcons();
         }
@@ -101,7 +107,7 @@ namespace Assets.Scripts.MyMods
             }
             else if (o.GetType() == typeof(HotkeysMod))
             {
-                var hotkeyEventArgs = (HotkeysMod.HotkeyEventArgs) e;
+                var hotkeyEventArgs = (HotkeysMod.HotkeyEventArgs)e;
 
                 UpdateIcons(hotkeyEventArgs.HotKeyCode == KeyCode.Alpha0);
 
@@ -167,49 +173,57 @@ namespace Assets.Scripts.MyMods
                 defaultToolTip.Draw();
         }
 
+        public void ResizeHotkeyBar()
+        {
+            Components.Clear();
+
+
+        }
+
+        public int GetDefaultXAxis(int maxHotkeyBarSize)
+        {
+            switch (maxHotkeyBarSize)
+            {
+                case 1:
+                    return panelXAxis = 150;
+                case 2:
+                    return panelXAxis = 140;
+                case 3:
+                    return panelXAxis = 130;
+                case 4:
+                    return panelXAxis = 115;
+                case 5:
+                    return panelXAxis = 100;
+                case 6:
+                    return panelXAxis = 90;
+                case 7:
+                    return panelXAxis = 80;
+                case 8:
+                    return panelXAxis = 70;
+                case 9:
+                    return panelXAxis = 50;
+                default:
+                    return panelXAxis = 50;
+            }
+        }
+
         #endregion
 
         #region Private Methods
 
-        void InitIcons()
+        public void InitIcons()
         {
-            // move the hotkeys to align with max hotkey bar size
-            int originX;
-            switch (HotkeysMod.instance.MaxHotkeyBarSize)
-            {
-                case 1:
-                    originX = 150;
-                    break;
-                case 2:
-                    originX = 140;
-                    break;
-                case 3:
-                    originX = 130;
-                    break;
-                case 4:
-                    originX = 115;
-                    break;
-                case 5:
-                    originX = 100;
-                    break;
-                case 6:
-                    originX = 90;
-                    break;
-                case 7:
-                    originX = 80;
-                    break;
-                case 8:
-                    originX = 70;
-                    break;
-                case 9:
-                    originX = 50;
-                    break;
-                default:
-                    originX = 50;
-                    break;
-            }
+            Components.Clear();
 
-            selfIconsPositioning = new IconsPositioning(new Vector2(16, 16), new Vector2(originX, 183), new Vector2(24, 0), new Vector2(0, 24), maxIconPool);
+            iconPool = new Panel[HotkeysMod.instance.MaxHotkeyBarSize];
+
+            // move the hotkeys to align with max hotkey bar size
+            selfIconsPositioning = new IconsPositioning(
+                new Vector2(panelSize, panelSize),
+                new Vector2(panelXAxis, panelYAxis),
+                new Vector2(columnStep, 0),
+                new Vector2(0, 24),
+                HotkeysMod.instance.MaxHotkeyBarSize);
 
             // Setup default tooltip
             //if (DaggerfallUnity.Settings.EnableToolTips)
@@ -231,6 +245,7 @@ namespace Assets.Scripts.MyMods
                     Enabled = true,
                     //ToolTip = defaultToolTip
                 };
+
                 Components.Add(iconPool[i]);
             }
         }
@@ -270,7 +285,7 @@ namespace Assets.Scripts.MyMods
 
             // Sort icons into active spells in self and other icon lists
             int poolIndex = 0;
-            for (int i = 0;  i < assignedHotkeys.Count; i++)
+            for (int i = 0; i < assignedHotkeys.Count; i++)
             {
                 var assignedHotkey = assignedHotkeys.ElementAt(i);
 
@@ -285,19 +300,18 @@ namespace Assets.Scripts.MyMods
                             hotkey.displayName = assignedHotkey.Value.Spell.Name;
                             break;
                         case HotkeyType.CampingEquipment:
-                            var tent = HotkeysMod.instance.GetItemByTemplateIndex(ItemGroups.UselessItems2, 530, false);
-                            // Debug.Log($"TENT IS NULL: {tent == null}");
-
-                            hotkey = AddItemInfoToPanel(tent, hotkey);
+                            hotkey = AddItemInfoToPanel(ItemGroups.UselessItems2, 530, hotkey);
                             break;
                         case HotkeyType.Meat:
-                            var meat = HotkeysMod.instance.GetItemByTemplateIndex(ItemGroups.UselessItems2, 537, true);
-                            // Debug.Log($"MEAT IS NULL: {meat == null}");
-
-                            hotkey = AddItemInfoToPanel(meat, hotkey);
+                            hotkey = AddItemInfoToPanel(ItemGroups.UselessItems2, 537, hotkey);
+                            break;
+                        case HotkeyType.LightSource:
+                            hotkey = AddItemInfoToPanel(ItemGroups.UselessItems2, assignedHotkey.Value.TemplateId, hotkey);
                             break;
                         default:
-                            var item = GameManager.Instance.PlayerEntity.Items.GetItem((ulong)assignedHotkey.Value.Id);
+                            //var item = GameManager.Instance.PlayerEntity.Items.GetItem((ulong)assignedHotkey.Value.Id);
+                            // check if you have the item in your inventory, if not remove icon from hotkey bar
+                            var item = GameManager.Instance.PlayerEntity.Items.GetItem(assignedHotkey.Value.PrimaryItem.UID);
                             if (item != null)
                             {
                                 var imageData = DaggerfallUnity.Instance.ItemHelper.GetItemImage(item);
@@ -321,16 +335,21 @@ namespace Assets.Scripts.MyMods
             AlignIcons(activeSelfList, selfIconsPositioning);
         }
 
-        ActiveHotkey AddItemInfoToPanel(DaggerfallUnityItem item, ActiveHotkey hotkey)
-        {
-            if (item != null)
-            {
-                var imageData = DaggerfallUnity.Instance.ItemHelper.GetItemImage(item);
 
-                hotkey.iconIndex = imageData.record;
-                hotkey.imageData = imageData;
-                hotkey.item = item;
-                hotkey.displayName = item.LongName;
+        ActiveHotkey AddItemInfoToPanel(ItemGroups itemGroup, int? templateId, ActiveHotkey hotkey)
+        {
+            if (templateId.HasValue)
+            {
+                var item = ItemBuilder.CreateItem(itemGroup, templateId.Value);
+                if (item != null)
+                {
+                    var imageData = DaggerfallUnity.Instance.ItemHelper.GetItemImage(item);
+
+                    hotkey.iconIndex = imageData.record;
+                    hotkey.imageData = imageData;
+                    hotkey.item = item;
+                    hotkey.displayName = item.LongName;
+                }
             }
 
             return hotkey;
@@ -421,11 +440,6 @@ namespace Assets.Scripts.MyMods
                 if (localY < startY)
                     icon.Position = new Vector2(icon.Position.x, (int)localY);
             }
-        }
-
-        private void SaveLoadManager_OnLoad(SaveData_v1 saveData)
-        {
-            UpdateIcons();
         }
 
         #endregion
