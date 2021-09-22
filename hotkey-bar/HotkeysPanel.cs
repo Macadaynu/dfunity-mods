@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,9 +14,6 @@ using UnityEngine;
 
 namespace Assets.Scripts.MyMods
 {
-    /// <summary>
-    /// Displays active spell icons on player HUD.
-    /// </summary>
     public class HotkeysPanel : Panel
     {
         #region Fields
@@ -26,8 +22,6 @@ namespace Assets.Scripts.MyMods
         public int panelXAxis;
         public int panelYAxis = 183;
         public int columnStep = 24;
-
-        //public int maxIconPool = HotkeysMod.instance.MaxHotkeyBarSize;
         public bool displayHotkeyBar = true;
 
         class IconsPositioning
@@ -309,9 +303,8 @@ namespace Assets.Scripts.MyMods
                             hotkey = AddItemInfoToPanel(ItemGroups.UselessItems2, assignedHotkey.Value.TemplateId, hotkey);
                             break;
                         default:
-                            //var item = GameManager.Instance.PlayerEntity.Items.GetItem((ulong)assignedHotkey.Value.Id);
+                            var item = GameManager.Instance.PlayerEntity.Items.GetItem((ulong)assignedHotkey.Value.Id);
                             // check if you have the item in your inventory, if not remove icon from hotkey bar
-                            var item = GameManager.Instance.PlayerEntity.Items.GetItem(assignedHotkey.Value.PrimaryItem.UID);
                             if (item != null)
                             {
                                 var imageData = DaggerfallUnity.Instance.ItemHelper.GetItemImage(item);

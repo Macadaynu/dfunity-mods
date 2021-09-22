@@ -14,18 +14,19 @@ namespace Assets.Scripts.MyMods
         }
 
         #endregion
+
         public override void OnPush()
         {
             base.OnPush();
 
-            HotkeysMod.instance.hotkeySelectionId = 0;
+            HotkeysMod.instance.selectionId = 0;
         }
 
         public override void OnPop()
         {
             base.OnPop();
 
-            HotkeysMod.instance.hotkeySelectionId = null;
+            HotkeysMod.instance.selectionId = null;
         }
 
         protected override void UpdateSelection()
@@ -34,7 +35,7 @@ namespace Assets.Scripts.MyMods
 
             if (!buyMode)
             {
-                HotkeysMod.instance.hotkeySelectionId = spellsListBox.SelectedIndex;
+                HotkeysMod.instance.selectionId = spellsListBox.SelectedIndex;
             }
         }
     }

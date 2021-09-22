@@ -10,9 +10,10 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
         public int Spacing;
         public bool DisplayHotkeys;
         public bool InvertScrollDirection;
+        public bool UseEquipDelayTimes;
 
         public HotkeySettings(int maxSlots, int maxRows, int panelSize, int xAxis, int yAxis,
-            int spacing, bool displayHotkeys, bool invertScrollDirection)
+            int spacing, bool displayHotkeys, bool invertScrollDirection, bool useEquipDelayTimes)
         {
             MaxSlots = maxSlots;
             MaxRows = maxRows;
@@ -22,6 +23,7 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
             Spacing = spacing;
             DisplayHotkeys = displayHotkeys;
             InvertScrollDirection = invertScrollDirection;
+            UseEquipDelayTimes = useEquipDelayTimes;
         }
     }
 }

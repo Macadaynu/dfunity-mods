@@ -2,10 +2,12 @@ using Assets.Scripts.Game.MacadaynuMods.HotkeyBar;
 using DaggerfallConnect.Arena2;
 using DaggerfallWorkshop;
 using DaggerfallWorkshop.Game;
+using DaggerfallWorkshop.Game.Entity;
 using DaggerfallWorkshop.Game.Formulas;
 using DaggerfallWorkshop.Game.Items;
 using DaggerfallWorkshop.Game.MagicAndEffects;
 using DaggerfallWorkshop.Game.UserInterfaceWindows;
+using JetBrains.Annotations;
 using System.Linq;
 using UnityEngine;
 
@@ -22,7 +24,7 @@ namespace Assets.MacadaynuMods.HotkeyBar
                 switch (hotKey.Type)
                 {
                     case HotkeyType.Weapon:
-                        EquipWeapon((ulong)hotKey.Id);
+                        EquipWeapon((ulong)hotKey.Id, hotKey.LeftHandItemId);
                         break;
                     case HotkeyType.Potion:
                         UsePotion((ulong)hotKey.Id);
@@ -38,7 +40,7 @@ namespace Assets.MacadaynuMods.HotkeyBar
                         UseEnchantedItem((ulong)hotKey.Id);
                         break;
                     case HotkeyType.LightSource:
-                        UseLightSource((ulong)hotKey.Id, hotKey.TemplateId);
+                        UseLightSource(hotKey.TemplateId);
                         break;
                     case HotkeyType.Book:
                         UseBook((ulong)hotKey.Id);
@@ -62,22 +64,26 @@ namespace Assets.MacadaynuMods.HotkeyBar
             }
         }
 
-        private static void EquipWeapon(ulong itemId)
+        private static void EquipWeapon(ulong itemId, ulong? leftHandItemId)
         {
             HotkeysMod.instance.spellToRearm = null;
 
             var weapon = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
 
-            if (weapon != null)
+            if (weapon != null && weapon.currentCondition > 0)
             {
                 var prohibited = false;
 
                 // Check for prohibited weapon type
                 if ((weapon.GetWeaponSkillUsed() & (int)GameManager.Instance.PlayerEntity.Career.ForbiddenProficiencies) != 0)
+                {
                     prohibited = true;
+                }
                 // Check for prohibited material
                 else if ((1 << weapon.NativeMaterialValue & (int)GameManager.Instance.PlayerEntity.Career.ForbiddenMaterials) != 0)
+                {
                     prohibited = true;
+                }
 
                 if (prohibited)
                 {
@@ -90,7 +96,14 @@ namespace Assets.MacadaynuMods.HotkeyBar
                 // cancel armed missile spell
                 GameManager.Instance.PlayerEffectManager.AbortReadySpell();
 
-                if (GameManager.Instance.PlayerEntity.ItemEquipTable.IsEquipped(weapon))
+                DaggerfallUnityItem leftHandItem = null;
+                if (leftHandItemId.HasValue)
+                {
+                    leftHandItem = GameManager.Instance.PlayerEntity.Items.GetItem(leftHandItemId.Value);
+                }
+
+                if (GameManager.Instance.PlayerEntity.ItemEquipTable.IsEquipped(weapon)
+                    && (leftHandItem == null || (ItemEquipTable.GetItemHands(weapon) == ItemHands.Both || GameManager.Instance.PlayerEntity.ItemEquipTable.IsEquipped(leftHandItem))))
                 {
                     // if switching from spell, unsheathe the weapon if sheathed
                     if (hasArmedSpell)
@@ -102,13 +115,39 @@ namespace Assets.MacadaynuMods.HotkeyBar
                     }
                     else
                     {
-                        // just sheathe/unsheathe the weapon if you are pressing a hotkey weapon already equipped
+                        // just sheathe/unsheathe the weapons if you are pressing a hotkey weapon already equipped
                         GameManager.Instance.WeaponManager.ToggleSheath();
                     }
                 }
                 else
                 {
-                    GameManager.Instance.PlayerEntity.ItemEquipTable.EquipItem(weapon);
+                    if (HotkeySettingsGUI.useEquipDelayTimes)
+                    {
+                        // Add equip delay if changing weapon
+                        SetEquipDelayTime(weapon, leftHandItem);
+                    }
+
+                    var unequippedRightItem = GameManager.Instance.PlayerEntity.ItemEquipTable.UnequipItem(EquipSlots.RightHand);
+                    if (unequippedRightItem != null)
+                    {
+                        GameManager.Instance.PlayerEntity.UpdateEquippedArmorValues(unequippedRightItem, false);
+                    }
+
+                    if (leftHandItem != null)
+                    {
+                        var unequippedLeftItem = GameManager.Instance.PlayerEntity.ItemEquipTable.UnequipItem(EquipSlots.LeftHand);
+                        if (unequippedLeftItem != null)
+                        {
+                            GameManager.Instance.PlayerEntity.UpdateEquippedArmorValues(unequippedLeftItem, false);
+                        }
+                    }
+
+                    EquipItem(weapon);
+
+                    if (leftHandItem != null)
+                    {                        
+                        EquipItem(leftHandItem);
+                    }
 
                     // unsheathe weapon if sheathed
                     if (GameManager.Instance.WeaponManager.Sheathed)
@@ -117,6 +156,63 @@ namespace Assets.MacadaynuMods.HotkeyBar
                     }
                 }
             }
+        }
+
+        static void EquipItem(DaggerfallUnityItem item)
+        {
+            var unequippedList = GameManager.Instance.PlayerEntity.ItemEquipTable.EquipItem(item, true);
+            if (unequippedList != null)
+            {
+                foreach (DaggerfallUnityItem unequippedItem in unequippedList)
+                {
+                    GameManager.Instance.PlayerEntity.UpdateEquippedArmorValues(unequippedItem, false);
+                }
+
+                GameManager.Instance.PlayerEntity.UpdateEquippedArmorValues(item, true);
+            }            
+        }
+
+        static void SetEquipDelayTime(DaggerfallUnityItem newRightHandItem, [CanBeNull] DaggerfallUnityItem newLeftHandItem)
+        {
+            int delayTimeRight = 0;
+            int delayTimeLeft = 0;
+            PlayerEntity player = GameManager.Instance.PlayerEntity;
+            DaggerfallUnityItem currentRightHandItem = player.ItemEquipTable.GetItem(EquipSlots.RightHand);
+            DaggerfallUnityItem currentLeftHandItem = player.ItemEquipTable.GetItem(EquipSlots.LeftHand);
+
+            // if the weapon changed
+            if (currentRightHandItem != newRightHandItem)
+            {
+                // Add delay for unequipping old item
+                if (currentRightHandItem != null)
+                {
+                    delayTimeRight = WeaponManager.EquipDelayTimes[currentRightHandItem.GroupIndex];
+                }
+
+                // Add delay for equipping new item
+                if (newRightHandItem != null)
+                {
+                    delayTimeRight += WeaponManager.EquipDelayTimes[newRightHandItem.GroupIndex];
+
+                    string message = TextManager.Instance.GetLocalizedText("equippingWeapon");
+                    message = message.Replace("%s", newRightHandItem.ItemTemplate.name);
+                    DaggerfallUI.Instance.PopupMessage(message);
+                }
+            }
+
+            if (currentLeftHandItem != newLeftHandItem)
+            {
+                // Add delay for unequipping old item
+                if (currentLeftHandItem != null)
+                    delayTimeLeft = WeaponManager.EquipDelayTimes[currentLeftHandItem.GroupIndex];
+
+                // Add delay for equipping new item
+                if (newLeftHandItem != null)
+                    delayTimeLeft += WeaponManager.EquipDelayTimes[newLeftHandItem.GroupIndex];
+            }
+
+            GameManager.Instance.WeaponManager.EquipCountdownRightHand += delayTimeRight;
+            GameManager.Instance.WeaponManager.EquipCountdownLeftHand += delayTimeLeft;
         }
 
         private static void UsePotion(ulong itemId)
@@ -135,7 +231,7 @@ namespace Assets.MacadaynuMods.HotkeyBar
         {
             var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
 
-            if (item != null)
+            if (item != null && item.currentCondition > 0)
             {
                 GameManager.Instance.PlayerEffectManager.DoItemEnchantmentPayloads(EnchantmentPayloadFlags.Used, item, GameManager.Instance.PlayerEntity.Items);
             }
@@ -189,7 +285,7 @@ namespace Assets.MacadaynuMods.HotkeyBar
         {
             var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
 
-            if (item != null)
+            if (item != null && item.currentCondition > 0)
             {
                 // Drug poison IDs are 136 through 139. Template indexes are 78 through 81, so add to that.
                 FormulaHelper.InflictPoison(GameManager.Instance.PlayerEntity, GameManager.Instance.PlayerEntity, (Poisons)item.TemplateIndex + 66, true);
@@ -197,7 +293,7 @@ namespace Assets.MacadaynuMods.HotkeyBar
             }
         }
 
-        private static void UseLightSource(ulong itemId, int? templateId)
+        private static void UseLightSource(int? templateId)
         {
             if (templateId.HasValue)
             {
@@ -206,24 +302,26 @@ namespace Assets.MacadaynuMods.HotkeyBar
                 if (lightSources.Any())
                 {
                     // use weakest light source first
-                    var item = lightSources.OrderBy(x => x.ConditionPercentage).First();
-                    if (item != null)
+                    var weakestLightSource = lightSources.OrderBy(x => x.ConditionPercentage).First();
+                    if (weakestLightSource != null)
                     {
-                        if (item.currentCondition > 0)
+                        if (weakestLightSource.currentCondition > 0)
                         {
                             var playerEntity = GameManager.Instance.PlayerEntity;
 
-                            if (playerEntity.LightSource == item)
+                            if (playerEntity.LightSource == weakestLightSource)
                             {
                                 playerEntity.LightSource = null;
                             }
                             else
                             {
-                                playerEntity.LightSource = item;
+                                playerEntity.LightSource = weakestLightSource;
                             }
                         }
                         else
-                            DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("lightEmpty"), false, item);
+                        {
+                            DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("lightEmpty"), false, weakestLightSource);
+                        }
                     }
                 }
                 else
@@ -237,7 +335,7 @@ namespace Assets.MacadaynuMods.HotkeyBar
         {
             var item = GameManager.Instance.PlayerEntity.Items.GetItem(itemId);
 
-            if (item != null)
+            if (item != null && item.currentCondition > 0)
             {
                 // Try to handle use with a registered delegate
                 ItemHelper.ItemUseHandler itemUseHandler;

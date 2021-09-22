@@ -43,6 +43,8 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
         static bool invertScrollDirection;
         static bool previousInvertScrollDirection;
 
+        public static bool useEquipDelayTimes;
+
         bool updateHotkeys;
         public static bool hotkeySettingsEnabled;
 
@@ -56,7 +58,8 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
                 yAxis,
                 spacing,
                 displayHotkeys,
-                invertScrollDirection);
+                invertScrollDirection,
+                useEquipDelayTimes);
         }
 
         public static void LoadHotkeySettings(HotkeySettings settings)
@@ -69,6 +72,7 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
             spacing = settings.Spacing;
             displayHotkeys = settings.DisplayHotkeys;
             invertScrollDirection = settings.InvertScrollDirection;
+            useEquipDelayTimes = settings.UseEquipDelayTimes;
 
             UpdateHotkeysUI();
         }
@@ -95,6 +99,8 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
 
             invertScrollDirection = true;
             HotkeysMod.instance.InvertScrollOrder = invertScrollDirection;
+
+            useEquipDelayTimes = false;
         }
 
         private void Start()
@@ -145,7 +151,7 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
                 style.fontSize = 14;
             }
 
-            hotkeySettingsControlsRect = GUI.Window(0, new Rect(Screen.width * .4f, Screen.height * .25f, 270, 370), HotkeySettingsControls, string.Empty, style);
+            hotkeySettingsControlsRect = GUI.Window(0, new Rect(Screen.width * .4f, Screen.height * .25f, 270, 400), HotkeySettingsControls, string.Empty, style);
         }
 
         private void HotkeySettingsControls(int windowID)
@@ -183,7 +189,9 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
 
             invertScrollDirection = GUI.Toggle(new Rect(10, labelY + ySpacing, 200, 25), invertScrollDirection, "Invert Scroll Direction", toggleStyle);
 
-            displayHotkeys = GUI.Toggle(new Rect(10, labelY + (ySpacing * 2), 200, 25), displayHotkeys, "Display Hotkey Bar", toggleStyle);
+            displayHotkeys = GUI.Toggle(new Rect(10, labelY + (ySpacing + 20), 200, 25), displayHotkeys, "Display Hotkey Bar", toggleStyle);
+
+            useEquipDelayTimes = GUI.Toggle(new Rect(10, labelY + (ySpacing + 40), 200, 25), useEquipDelayTimes, "Use Equip Delay Times", toggleStyle);
 
             // check for changes to the settings
             updateHotkeys = previousmaxSlots != maxSlots ||

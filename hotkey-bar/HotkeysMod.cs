@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Assets.MacadaynuMods.HotkeyBar;
 using Assets.Scripts.Game.MacadaynuMods.HotkeyBar;
@@ -14,6 +15,7 @@ using DaggerfallWorkshop.Game.UserInterface;
 using DaggerfallWorkshop.Game.UserInterfaceWindows;
 using DaggerfallWorkshop.Game.Utility;
 using DaggerfallWorkshop.Game.Utility.ModSupport;
+using Newtonsoft.Json;
 using UnityEngine;
 using Wenzil.Console;
 using static DaggerfallWorkshop.Game.InputManager;
@@ -42,13 +44,14 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     public static HotkeysMod instance;
 
     public DaggerfallUnityItem hoveredItem;
-    public int? hotkeySelectionId;
+    public int? selectionId;
 
     public Dictionary<KeyCode, Hotkey> hotkeys;
 
     public Type SaveDataType { get { return typeof(HotkeysSaveData); } }
 
     public event EventHandler OnHotkeyPressed;
+    public event EventHandler OnCloseSettings;
 
     public EntityEffectBundle spellToRearm;
 
@@ -61,6 +64,8 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
     public HotkeysPanel panel;
     public GameObject panelController;
+
+    bool checkingForPause;
 
     #endregion
 
@@ -120,13 +125,120 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         GameManager.Instance.PlayerEffectManager.OnCastReadySpell += OnCastReadySpell;
 
         StartGameBehaviour.OnStartGame += StartGameBehaviour_OnStartGame;
+
+        if (!Directory.Exists(mod.PersistentDataDirectory))
+        {
+            Directory.CreateDirectory(mod.PersistentDataDirectory);
+        }
+
     }
 
     #endregion
 
     #region Detect Hotkey Input
 
-    private void HandleInput(KeyCode keyCode)
+    void Update()
+    {
+        if (checkingForPause && GameManager.IsGamePaused && DaggerfallUI.UIManager.WindowCount > 0)//DaggerfallUI.UIManager.TopWindow.GetType() == (typeof(DaggerfallPauseOptionsWindow)))
+        {
+            DaggerfallUI.UIManager.PopWindow();
+            checkingForPause = false;
+            Instance.AddAction(Actions.ActivateCursor);
+        }
+
+        if (!GameManager.Instance.PlayerSpellCasting.IsPlayingAnim)
+        {
+            if (consoleController.ui.isConsoleOpen
+                || SaveLoadManager.Instance.LoadInProgress)
+                return;
+
+            if (!GameManager.IsGamePaused && DaggerfallUI.UIManager.WindowCount == 0)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape) && HotkeySettingsGUI.hotkeySettingsEnabled)
+                {
+                    checkingForPause = true;
+                    HotkeySettingsGUI.hotkeySettingsEnabled = false;
+                }
+
+                if (Input.GetKeyDown(KeyCode.Alpha0))
+                {
+                    Instance.AddAction(Actions.ActivateCursor);
+
+                    HotkeySettingsGUI.hotkeySettingsEnabled = !HotkeySettingsGUI.hotkeySettingsEnabled;
+                }
+
+                if (MaxHotkeyBanks > 1)
+                {
+                    var mouseScrollWheel = Input.GetAxis("Mouse ScrollWheel");
+
+                    if (Input.GetKeyDown(KeyCode.Minus) || mouseScrollWheel < 0f)
+                    {
+                        if (InvertScrollOrder)
+                        {
+                            IncrementHotkeyBank();
+                        }
+                        else
+                        {
+                            DecrementHotKeyBank();
+                        }
+
+                        hotkeys = hotkeyBanks.ElementAt(CurrentHotkeyBank - 1);
+
+                        if (OnHotkeyPressed != null)
+                        {
+                            OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Minus));
+                        }
+                    }
+
+                    if (Input.GetKeyDown(KeyCode.Equals) || mouseScrollWheel > 0f)
+                    {
+                        if (InvertScrollOrder)
+                        {
+                            DecrementHotKeyBank();
+                        }
+                        else
+                        {
+                            IncrementHotkeyBank();
+                        }
+
+                        hotkeys = hotkeyBanks.ElementAt(CurrentHotkeyBank - 1);
+
+                        if (OnHotkeyPressed != null)
+                        {
+                            OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Equals));
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < 9; i++)
+            {
+                if (MaxHotkeyBarSize > i)
+                {
+                    if (Input.GetKeyDown((KeyCode)(49 + i)))
+                    {
+                        HandleInput((KeyCode)(49 + i), Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift));
+                    }
+                }
+            }
+
+            if (spellToRearm != null)
+            {
+                EntityEffectManager playerEffectManager = GameManager.Instance.PlayerEffectManager;
+                if (playerEffectManager && !playerEffectManager.HasReadySpell)
+                {
+                    playerEffectManager.SetReadySpell(spellToRearm);
+                    spellToRearm = null;
+                }
+            }
+        }
+    }
+
+    #endregion
+
+    #region Handle Hotkey Input
+
+    private void HandleInput(KeyCode keyCode, bool leftHandEquip)
     {
         HotkeyType? hotkeyType = null;
         if (DaggerfallUI.UIManager.TopWindow.GetType() == typeof(DaggerfallInputMessageBox))
@@ -134,12 +246,19 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
             return;
         }
 
-        if (!GameManager.IsGamePaused && DaggerfallUI.UIManager.WindowCount == 0)
+        var isEquipping = HotkeySettingsGUI.useEquipDelayTimes && (GameManager.Instance.WeaponManager.EquipCountdownRightHand > 0f || GameManager.Instance.WeaponManager.EquipCountdownLeftHand > 0f);
+
+        // activate hotkeys in game
+        if (!GameManager.IsGamePaused
+            && DaggerfallUI.UIManager.WindowCount == 0
+            && !isEquipping)
         {
             HotkeyActivator.ActivateHotKey(keyCode);
         }
-        else if (hotkeySelectionId.HasValue)
+        // map hotkeys in menus
+        else if (selectionId.HasValue)
         {
+            string warningMessage = null;
             var uiType = DaggerfallUI.UIManager.TopWindow.GetType();
             if (uiType == typeof(HotkeysSpellBookWindow))
             {
@@ -147,9 +266,50 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
             }
             else if (uiType == typeof(DaggerfallInventoryWindow) || (uiType?.IsSubclassOf(typeof(DaggerfallInventoryWindow)) ?? false))
             {
-                if (hoveredItem.ItemGroup == ItemGroups.Weapons && hoveredItem.GroupIndex != 18) // group index 18 is for arrows
+                if (leftHandEquip)
                 {
-                    hotkeyType = HotkeyType.Weapon;
+                    var hoveredItemHands = ItemEquipTable.GetItemHands(hoveredItem);
+
+                    if (hotkeys[keyCode] != null && (hoveredItemHands == ItemHands.LeftOnly || hoveredItemHands == ItemHands.Either))
+                    {
+                        var rightItem = GameManager.Instance.PlayerEntity.Items.GetItem((ulong)hotkeys[keyCode].Id);
+
+                        if (rightItem != null && rightItem.UID == hoveredItem.UID)
+                        {
+                            warningMessage = $"{hoveredItem.LongName} has already been mapped to the Right Hand of this Hotkey";
+                        }
+                        else if (rightItem != null && ItemEquipTable.GetItemHands(rightItem) == ItemHands.Both)
+                        {
+                            warningMessage = $"{hoveredItem.LongName} cannot be mapped as {rightItem.LongName} requires both hands for this Hotkey";
+                        }
+                        else if (hoveredItemHands == ItemHands.RightOnly)
+                        {
+                            warningMessage = $"{hoveredItem.LongName} is right handed only";
+                        }
+                        else if (hoveredItem.ItemGroup == ItemGroups.Armor && (hoveredItemHands == ItemHands.LeftOnly || hoveredItemHands == ItemHands.Either))
+                        {
+                            hotkeyType = HotkeyType.Armor;
+                        }
+                        else if (hoveredItem.ItemGroup == ItemGroups.Weapons && hoveredItem.GroupIndex != 18 && (hoveredItemHands == ItemHands.LeftOnly || hoveredItemHands == ItemHands.Either))
+                        {
+                            hotkeyType = HotkeyType.Weapon;
+                        }
+                    }
+                }
+                else if (hoveredItem.UID == hotkeys[keyCode]?.LeftHandItemId)
+                {
+                    warningMessage = $"{hoveredItem.LongName} has already been mapped to the Left Hand of this Hotkey";
+                }
+                else if (hoveredItem.ItemGroup == ItemGroups.Weapons)
+                {
+                    if (hoveredItem.GroupIndex != 18)
+                    {
+                        hotkeyType = HotkeyType.Weapon;
+                    }
+                }
+                else if (hoveredItem.ItemGroup == ItemGroups.Armor && ItemEquipTable.GetItemHands(hoveredItem) == ItemHands.LeftOnly)
+                {
+                    hotkeyType = null;
                 }
                 else if (hoveredItem.ItemGroup == ItemGroups.Books && !hoveredItem.IsArtifact)
                 {
@@ -195,7 +355,7 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
                 {
                     hotkeyType = HotkeyType.Meat;
                 }
-                // generic item should be last
+                // generic item should be last check, the remaining items will attempt to be used as normal items
                 else
                 {
                     hotkeyType = HotkeyType.GenericItem;
@@ -204,15 +364,29 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
             if (hotkeyType.HasValue)
             {
-                AssignHotkey(keyCode, hotkeySelectionId.Value, hotkeyType.Value, hoveredItem?.TemplateIndex);
+                AssignHotkey(keyCode, selectionId.Value, hotkeyType.Value, leftHandEquip, hoveredItem?.TemplateIndex);
             }
             else
             {
-                var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(TextFile.Formatting.JustifyCenter,
-                    $"You cannot map the {hoveredItem.LongName}"
-                );
+                if (leftHandEquip && hotkeys[keyCode] == null)
+                {
+                    warningMessage = $"You must first map a Right Handed weapon to this Hotkey";
+                }
+                else if (string.IsNullOrWhiteSpace(warningMessage))
+                {
+                    warningMessage = $"You cannot map the {hoveredItem.LongName + (leftHandEquip ? " to your Left Hand" : "")}";
+                }
 
-                DaggerfallMessageBox messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager, DaggerfallMessageBox.CommonMessageBoxButtons.Nothing, tokens.ToArray(), DaggerfallUI.Instance.InventoryWindow);
+                var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(
+                    TextFile.Formatting.JustifyCenter,
+                    warningMessage);
+
+                DaggerfallMessageBox messageBox = new DaggerfallMessageBox(
+                    DaggerfallUI.UIManager,
+                    DaggerfallMessageBox.CommonMessageBoxButtons.Nothing,
+                    tokens.ToArray(),
+                    DaggerfallUI.Instance.InventoryWindow);
+
                 messageBox.ClickAnywhereToClose = true;
                 messageBox.AllowCancel = false;
                 messageBox.ParentPanel.BackgroundColor = Color.clear;
@@ -221,13 +395,17 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         }
 
         // Raise event
-        if (OnHotkeyPressed != null)
+        if (OnHotkeyPressed != null && !isEquipping)
         {
             OnHotkeyPressed(this, new HotkeyEventArgs(keyCode));
         }
     }
 
-    private void AssignHotkey(KeyCode keyCode, int selectionId, HotkeyType hotkeyType, int? templateId = null)
+    #endregion
+
+    #region Assign Hotkey Input
+
+    private void AssignHotkey(KeyCode keyCode, int selectionId, HotkeyType hotkeyType, bool leftHandEquip = false, int? templateId = null)
     {
         var spellSettings = new EffectBundleSettings();
 
@@ -241,10 +419,14 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
             }
 
             var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(TextFile.Formatting.JustifyCenter,
-                $"{spellSettings.Name} has been assigned to Hotkey: {keyCode.ToString().Last()}"
-                );
+                $"{spellSettings.Name} has been assigned to Hotkey: {keyCode.ToString().Last()}");
 
-            DaggerfallMessageBox messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager, DaggerfallMessageBox.CommonMessageBoxButtons.Nothing, tokens, DaggerfallUI.UIManager.TopWindow);
+            DaggerfallMessageBox messageBox = new DaggerfallMessageBox(
+                DaggerfallUI.UIManager,
+                DaggerfallMessageBox.CommonMessageBoxButtons.Nothing,
+                tokens,
+                DaggerfallUI.UIManager.TopWindow);
+
             messageBox.ClickAnywhereToClose = true;
             messageBox.AllowCancel = false;
             messageBox.ParentPanel.BackgroundColor = Color.clear;
@@ -252,188 +434,101 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         }
         else
         {
-            var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(TextFile.Formatting.JustifyCenter,
-                $"{hoveredItem.LongName} has been assigned to Hotkey: {keyCode.ToString().Last()}"
-                );
+            // check what's currently mapped for both hands
+            DaggerfallUnityItem rightItem = null;
+            DaggerfallUnityItem leftItem = null;
+            if (hotkeys[keyCode] != null)
+            {
+                rightItem = leftHandEquip ? GameManager.Instance.PlayerEntity.Items.GetItem((ulong)hotkeys[keyCode].Id) : hoveredItem;
 
-            DaggerfallMessageBox messageBox = new DaggerfallMessageBox(DaggerfallUI.UIManager, DaggerfallMessageBox.CommonMessageBoxButtons.Nothing, tokens.ToArray(), DaggerfallUI.UIManager.TopWindow);
+                if (hotkeys[keyCode].LeftHandItemId.HasValue)
+                {
+                    // if equipped Right Hand item is 2-Handed, unmap the Left Hand
+                    if (rightItem != null && ItemEquipTable.GetItemHands(rightItem) == ItemHands.Both)
+                    {
+                        leftItem = null;
+                        hotkeys[keyCode].LeftHandItemId = null;
+                    }
+                    else
+                    {
+                        // get the currently mapped left hand info
+                        leftItem = GameManager.Instance.PlayerEntity.Items.GetItem(hotkeys[keyCode].LeftHandItemId.Value);
+
+                        // if this Left Hand item is already equipped, toggle it off
+                        if (leftHandEquip && leftItem.UID == hoveredItem.UID)
+                        {
+                            leftItem = null;
+                            hotkeys[keyCode].LeftHandItemId = null;
+                        }
+                    }
+                }
+            }
+
+            List<string> hotkeyMappingInfo;
+            if ((hotkeys[keyCode] == null && ItemEquipTable.GetItemHands(hoveredItem) == ItemHands.Both)
+                || (rightItem != null && ItemEquipTable.GetItemHands(rightItem) == ItemHands.Both))
+            {
+                hotkeyMappingInfo = new List<string>
+                {
+                    $"Hotkey {keyCode.ToString().Last()} has the following mapping:",
+                    string.Empty,
+                    $"Both Hands: {(leftHandEquip ? $"{hoveredItem.LongName}" : $"{hoveredItem.LongName}")}"
+                };
+            }
+            else if (hotkeyType == HotkeyType.Armor || hotkeyType == HotkeyType.Weapon)
+            {
+                hotkeyMappingInfo = new List<string>
+                {
+                    $"Hotkey {keyCode.ToString().Last()} has the following mapping:",
+                    string.Empty,
+                    $"Right Hand: {(leftHandEquip ? $"{rightItem?.LongName ?? "Empty"}" : $"{hoveredItem.LongName}")}",
+                    $"Left Hand: {(leftHandEquip ? $"{hoveredItem.LongName}" : $"{leftItem?.LongName ?? "Empty"}")}"
+                };
+            }
+            else
+            {
+                hotkeyMappingInfo = new List<string>
+                {
+                    $"{hoveredItem.LongName} has been assigned to Hotkey {keyCode.ToString().Last()}"
+                };
+            }
+
+            var tokens = DaggerfallUnity.Instance.TextProvider.CreateTokens(TextFile.Formatting.JustifyCenter, hotkeyMappingInfo.ToArray());
+
+            DaggerfallMessageBox messageBox = new DaggerfallMessageBox(
+                DaggerfallUI.UIManager,
+                DaggerfallMessageBox.CommonMessageBoxButtons.Nothing,
+                tokens.ToArray(),
+                DaggerfallUI.UIManager.TopWindow);
+
             messageBox.ClickAnywhereToClose = true;
             messageBox.AllowCancel = false;
             messageBox.ParentPanel.BackgroundColor = Color.clear;
             DaggerfallUI.UIManager.PushWindow(messageBox);
         }
 
-        // remove item from already existing hotkey assignment
-        var assignedHotkey = hotkeys.FirstOrDefault(x => x.Value?.Id == selectionId && x.Value?.Type == hotkeyType);
-        if (assignedHotkey.Value != null)
+        if (leftHandEquip)
         {
-            hotkeys[assignedHotkey.Key] = null;
+            hotkeys[keyCode].LeftHandItemId = (ulong?)selectionId;
         }
-
-        // assign the new hotkey
-        hotkeys[keyCode] = new Hotkey
+        else
         {
-            Id = selectionId,
-            Type = hotkeyType,
-            Spell = spellSettings,
-            TemplateId = templateId
-        };
-    }
-
-    void Update()
-    {
-        if (!GameManager.Instance.PlayerSpellCasting.IsPlayingAnim)
-        {
-            if (consoleController.ui.isConsoleOpen || SaveLoadManager.Instance.LoadInProgress)
-                return;
-
-            if (!GameManager.IsGamePaused && DaggerfallUI.UIManager.WindowCount == 0)
+            // remove item from already existing item hotkey assignments, that don't have LH mapped
+            var assignedHotkey = hotkeys.FirstOrDefault(x => x.Value?.Id == selectionId && x.Value?.Type == hotkeyType && (!x.Value?.LeftHandItemId.HasValue ?? true));
+            if (assignedHotkey.Value != null)
             {
-                if (MaxHotkeyBanks > 1)
-                {
-                    // TODO: fast switch to default hotkey bar
-                    //if (Input.GetMouseButtonDown(2))
-                    //{
-                    //    hotkeys = hotkeyBanks.ElementAt(0);
-
-                    //    if (OnHotkeyPressed != null)
-                    //    {
-                    //        OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Minus));
-                    //    }
-
-                    //    return;
-                    //}
-
-                    var mouseScrollWheel = Input.GetAxis("Mouse ScrollWheel");
-
-                    if (Input.GetKeyDown(KeyCode.Minus) || mouseScrollWheel < 0f)
-                    {
-                        if (InvertScrollOrder)
-                        {
-                            IncrementHotkeyBank();
-                        }
-                        else
-                        {
-                            DecrementHotKeyBank();
-                        }
-
-                        hotkeys = hotkeyBanks.ElementAt(CurrentHotkeyBank - 1);
-
-                        if (OnHotkeyPressed != null)
-                        {
-                            OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Minus));
-                        }
-                    }
-
-                    if (Input.GetKeyDown(KeyCode.Equals) || mouseScrollWheel > 0f)
-                    {
-                        if (InvertScrollOrder)
-                        {
-                            DecrementHotKeyBank();
-                        }
-                        else
-                        {
-                            IncrementHotkeyBank();
-                        }
-
-                        hotkeys = hotkeyBanks.ElementAt(CurrentHotkeyBank - 1);
-
-                        if (OnHotkeyPressed != null)
-                        {
-                            OnHotkeyPressed(this, new HotkeyEventArgs(KeyCode.Equals));
-                        }
-                    }
-                }
-
-                if (Input.GetKeyDown(KeyCode.Alpha0))
-                {
-                    Instance.AddAction(Actions.ActivateCursor);
-
-                    HotkeySettingsGUI.hotkeySettingsEnabled = !HotkeySettingsGUI.hotkeySettingsEnabled;
-                }
+                hotkeys[assignedHotkey.Key] = null;
             }
 
-            if (MaxHotkeyBarSize > 0)
+            // assign the new hotkey
+            hotkeys[keyCode] = new Hotkey
             {
-                if (Input.GetKeyDown(KeyCode.Alpha1))
-                {
-                    HandleInput(KeyCode.Alpha1);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 1)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha2))
-                {
-                    HandleInput(KeyCode.Alpha2);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 2)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha3))
-                {
-                    HandleInput(KeyCode.Alpha3);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 3)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha4))
-                {
-                    HandleInput(KeyCode.Alpha4);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 4)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha5))
-                {
-                    HandleInput(KeyCode.Alpha5);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 5)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha6))
-                {
-                    HandleInput(KeyCode.Alpha6);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 6)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha7))
-                {
-                    HandleInput(KeyCode.Alpha7);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 7)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha8))
-                {
-                    HandleInput(KeyCode.Alpha8);
-                }
-            }
-
-            if (MaxHotkeyBarSize > 8)
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha9))
-                {
-                    HandleInput(KeyCode.Alpha9);
-                }
-            }
-
-            if (spellToRearm != null)
-            {
-                EntityEffectManager playerEffectManager = GameManager.Instance.PlayerEffectManager;
-                if (playerEffectManager && !playerEffectManager.HasReadySpell)
-                {
-                    playerEffectManager.SetReadySpell(spellToRearm);
-                    spellToRearm = null;
-                }
-            }
+                Id = selectionId,
+                Spell = spellSettings,
+                Type = hotkeyType,
+                TemplateId = templateId,
+                LeftHandItemId = hotkeys[keyCode]?.LeftHandItemId
+            };
         }
     }
 
@@ -551,21 +646,13 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
     {
         if (loc == ItemHoverLocation.LocalList || loc == ItemHoverLocation.Paperdoll)
         {
-            hotkeySelectionId = (int)item.UID;
+            selectionId = (int)item.UID;
             hoveredItem = item;
         }
         else
         {
-            hotkeySelectionId = null;
+            selectionId = null;
             hoveredItem = null;
-        }
-    }
-
-    void OnCastReadySpell(EntityEffectBundle spell)
-    {
-        if (spellToRearm == null && spell.Settings.TargetType != TargetTypes.None && spell.Settings.TargetType != TargetTypes.CasterOnly)
-        {
-            spellToRearm = spell;
         }
     }
 
@@ -576,12 +663,33 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
     public void OnInventoryClose()
     {
-        hotkeySelectionId = null;
+        selectionId = null;
         hoveredItem = null;
     }
 
+    void OnCastReadySpell(EntityEffectBundle spell)
+    {
+        if (spellToRearm == null && spell.Settings.TargetType != TargetTypes.None && spell.Settings.TargetType != TargetTypes.CasterOnly)
+        {
+            spellToRearm = spell;
+        }
+    }
+    
     public void StartGameBehaviour_OnStartGame(object sender, EventArgs e)
     {
+        HotkeySettings hotkeyBarSettings = null;
+        var modSettingsDataFile = Directory.GetFiles(mod.PersistentDataDirectory, "HotkeySettingsData.json").FirstOrDefault();
+
+        if (modSettingsDataFile != null)
+        {
+            hotkeyBarSettings = JsonConvert.DeserializeObject<HotkeySettings>(File.ReadAllText(Path.Combine(mod.PersistentDataDirectory, "HotkeySettingsData.json")));
+        }
+
+        if (hotkeyBarSettings != null)
+        {
+            HotkeySettingsGUI.LoadHotkeySettings(hotkeyBarSettings);
+        }
+
         panel.InitIcons();
         panel.UpdateIcons();
     }
@@ -595,26 +703,27 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
         switch (message)
         {
             // Other mod sends hotkey parameters, and it gets registered as a new hotkey at the selected keycode
-            // Parameter: Tuple<KeyCode, int, string>
+            // Parameter: Tuple<KeyCode, int, string, bool>
             // - KeyCode: key the selected item is assigned to
             // - int: selection id. For spells, this is the position in the spellbook. For items, this is the item's UID
             // - string: HotkeyType enum value
+            // - bool: whether or not the item is to be mapped to the left hand
             case "RegisterHotkey":
-                Tuple<KeyCode, int, string> args = data as Tuple<KeyCode, int, string>;
+                Tuple<KeyCode, int, string, bool> args = data as Tuple<KeyCode, int, string, bool>;
                 if (args == null)
                 {
                     callBack?.Invoke(message, "Invalid arguments, expected Tuple<KeyCode, int, string>");
                     return;
                 }
 
-                var (keyCode, selectionId, hotkeyType) = args.ToValueTuple();
+                var (keyCode, selectionId, hotkeyType, leftHandEquip) = args.ToValueTuple();
                 if (!Enum.TryParse(hotkeyType, out HotkeyType parsedValue))
                 {
                     callBack?.Invoke(message, $"Invalid hotkey type '{hotkeyType}'");
                     return;
                 }
 
-                instance.AssignHotkey(keyCode, selectionId, parsedValue);
+                instance.AssignHotkey(keyCode, selectionId, parsedValue, leftHandEquip);
 
                 callBack?.Invoke(message, null);
                 break;
@@ -651,6 +760,11 @@ public class HotkeysMod : MonoBehaviour, IHasModSaveData
 
     public object GetSaveData()
     {
+        // whenever you save a game, save the mod settings to persistent save data so it can be loaded for new games
+        string filePath = Path.Combine(mod.PersistentDataDirectory, "HotkeySettingsData.json");
+        var json = JsonConvert.SerializeObject(HotkeySettingsGUI.GetHotkeySettings());
+        File.WriteAllText(filePath, json);
+
         return new HotkeysSaveData
         {
             HotKeyBanksSerialized = hotkeyBanks,

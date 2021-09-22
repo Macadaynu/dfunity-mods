@@ -17,6 +17,7 @@ namespace Assets.Scripts.Game.MacadaynuMods.HotkeyBar
         Drug = 12,
         Oil = 13,
         CampingEquipment = 14,
-        Meat = 15
+        Meat = 15,
+        Armor = 16
     }
 }
