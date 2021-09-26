@@ -47,20 +47,7 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
 
         void QuestMachine_OnQuestStarted(Quest quest)
         {
-            // TODO: be more selective with quest resource
-            QuestResource[] clockResources = quest.GetAllResources(typeof(Clock));
-            foreach (QuestResource clockResource in clockResources)
-            {
-                Clock clock = (Clock)clockResource;
-
-                //DFLocation questLocation = DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(questPlace.SiteDetails.regionName, questPlace.SiteDetails.locationName);
-
-                //AddMapSummaryFromLocation(questLocation);
-            }
-
             var siteDetails = QuestMachine.Instance.GetAllActiveQuestSites().ToList();
-
-            // if the quest has a dungeon location, make sure the dungeon has a target resource
             foreach (var questSiteDetails in siteDetails.Where(x => x.questUID == quest.UID))
             {
                 QuestMarker? newDungeonQuestMarker = questSiteDetails.questItemMarkers?.FirstOrDefault(x => x.placeSymbol?.Original == "_newdung_");
@@ -90,92 +77,5 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
                 HiddenMapLocationsMod.discoveredMapSummaries.Add(mapSummary);
             }
         }
-
-        public void UIManager_OnWindowChangeHandler(object sender, EventArgs e)
-        {
-            SiteDetails[] siteDetails = QuestMachine.Instance.GetAllActiveQuestSites();
-        }
-
-        // TODO: be more selective with quest resource
-        //QuestResource[] placeResources = quest.GetAllResources(typeof(Place));
-        //foreach (QuestResource placeResource in placeResources)
-        //{
-        //    Place questPlace = (Place)placeResource;
-
-        //    DFLocation questLocation = DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(questPlace.SiteDetails.regionName, questPlace.SiteDetails.locationName);
-
-        //    AddMapSummaryFromLocation(questLocation);
-        //}
-
-        //if (sender.GetType() == typeof(UserInterfaceManager))
-        //{
-        //    var uiManager = (UserInterfaceManager)sender;
-
-        //    if (uiManager.TopWindow.GetType() == typeof(DaggerfallMessageBox))
-        //    {
-        //        var messageBox = (DaggerfallMessageBox)uiManager.TopWindow;
-
-        //        messageBox.
-        //    }
-
-        //    var text = uiManager.TopWindow.Value
-        //}
-
-        //if (!GameInProgress) //don't override non-game state when UI push
-        //    return;
-        //else if (DaggerfallUI.UIManager.WindowCount > 0)
-        //    ChangeState(StateTypes.UI);
-        //else if (!GameManager.IsGamePaused)
-        //    ChangeState(LastState);
-        //else
-        //{
-        //    ChangeState(StateTypes.None);
-        //}
-
-        //void RecordLocationFromMap(DaggerfallUnityItem item)
-        //{
-        //    const int mapTextId = 499;
-        //    PlayerGPS playerGPS = GameManager.Instance.PlayerGPS;
-
-        //    try
-        //    {
-        //        DFLocation revealedLocation = playerGPS.DiscoverRandomLocation();
-
-        //        if (string.IsNullOrEmpty(revealedLocation.Name))
-        //            throw new Exception();
-
-        //        playerGPS.LocationRevealedByMapItem = revealedLocation.Name;
-        //        GameManager.Instance.PlayerEntity.Notebook.AddNote(
-        //            TextManager.Instance.GetLocalizedText("readMap").Replace("%map", revealedLocation.Name));
-
-        //        DaggerfallMessageBox mapText = new DaggerfallMessageBox(uiManager, this);
-        //        mapText.SetTextTokens(DaggerfallUnity.Instance.TextProvider.GetRandomTokens(mapTextId));
-        //        mapText.ClickAnywhereToClose = true;
-        //        mapText.Show();
-        //    }
-        //    catch (Exception)
-        //    {
-        //        // Player has already descovered all valid locations in this region!
-        //        DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("readMapFail"));
-        //    }
-        //}
-
-        //public void AddQuestTopicWithInfoAndRumors(Quest quest)
-        //{
-        //    // Add RumorsDuringQuest rumor to rumor mill
-        //    Message message = quest.GetMessage((int)QuestMachine.QuestMessages.RumorsDuringQuest);
-        //    if (message != null)
-        //        AddOrReplaceQuestProgressRumor(quest.UID, message);
-
-        //    // Add topics for the places to see, people to meet and items to handle.
-        //    foreach (QuestResource resource in quest.GetAllResources())
-        //    {
-        //        QuestInfoResourceType type = GetQuestInfoResourceType(resource);
-        //        List<TextFile.Token[]> anyInfoAnswers = resource.GetMessage(resource.InfoMessageID);
-        //        List<TextFile.Token[]> rumorsAnswers = resource.GetMessage(resource.RumorsMessageID);
-
-        //        AddQuestTopicWithInfoAndRumors(quest.UID, resource, resource.Symbol.Name, type, anyInfoAnswers, rumorsAnswers);
-        //    }
-        //}
     }
 }
