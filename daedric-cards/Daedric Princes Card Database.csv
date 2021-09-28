@@ -1,0 +1,9 @@
+Id,Name,Description,Attack,Health,Cost,IntroSFX,DeathSFX
+1,Skeletal Warrior,,4,3,4,162,161
+2,Vampire Ancient,,7,6,7,205,206
+3,Fire Atronach,,6,6,6,193,194
+4,Ancient Lich,,8,8,8,211,212
+5,Azura,,0,30,0,-1,-1
+6,Hircine,,0,30,0,-1,-1
+7,Giant Rat,,1,2,1,116,117
+8,Grizzly Bear,,3,3,3,128,129

@@ -1,0 +1,8 @@
+{
+	"id": 1,
+	"name": "Skeleton Warrior",
+	"description": "Spooky",
+	"attack": 2,
+	"health": 2,
+	"cost": 2
+}
