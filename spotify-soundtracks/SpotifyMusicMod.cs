@@ -167,7 +167,7 @@ namespace Assets.Scripts.Game.MacadaynuMods
                 PlayPlaylistForCurrentLocation();
             }
             // if entering a fighters guild
-            else if (useMagesGuildMusic && PlayerIsInFactionBuilding(fightersGuildFactions))//, args.DaggerfallInterior))
+            else if (useFightersGuildMusic && PlayerIsInFactionBuilding(fightersGuildFactions))//, args.DaggerfallInterior))
             {
                 PlayPlaylistForCurrentLocation();
             }
