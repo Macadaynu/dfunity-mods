@@ -6,6 +6,8 @@ using DaggerfallWorkshop.Game.Utility.ModSupport;
 using DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings;
 using UnityEngine;
 using System.Linq;
+using DaggerfallConnect.Arena2;
+using System.Collections.Generic;
 
 namespace Assets.Scripts.Game.MacadaynuMods
 {
@@ -15,16 +17,33 @@ namespace Assets.Scripts.Game.MacadaynuMods
         static ModSettings settings;
         static bool useTownMusic;
         static bool useNightExplorationMusic;
+        static bool useShopMusic;
+        static bool useTempleMusic;
+        static bool useMagesGuildMusic;
+        static bool useFightersGuildMusic;
         static bool isInsideTavern;
+        static bool isInsideShop;
+        static bool isInsideTemple;
+        static bool isInsideMagesGuild;
+        static bool isInsideFightersGuild;
 
         public static string explorationPlaylistId;
         public static string explorationNightPlaylistId;
         public static string dungeonPlaylistId;
         public static string tavernPlaylistId;
         public static string townPlaylistId;
+        public static string shopsPlaylistId;
+        public static string templePlaylistId;
+        public static string magesGuildPlaylistId;
+        public static string fightersGuildPlaylistId;
         public static string clientId;
         public static string clientSecret;
         public static string refreshToken;
+        public static string computerName;
+
+        List<FactionFile.FactionIDs> templeFactions;
+        List<FactionFile.FactionIDs> magesGuildFactions;
+        List<FactionFile.FactionIDs> fightersGuildFactions;
 
         public void Awake()
         {
@@ -43,6 +62,28 @@ namespace Assets.Scripts.Game.MacadaynuMods
             WorldTime.OnDusk += OnDusk;
 
             DaggerfallUnity.Settings.MusicVolume = 0;
+
+            magesGuildFactions = new List<FactionFile.FactionIDs> { FactionFile.FactionIDs.The_Mages_Guild };
+            fightersGuildFactions = new List<FactionFile.FactionIDs> { FactionFile.FactionIDs.The_Fighters_Guild };
+            templeFactions = new List<FactionFile.FactionIDs>
+            {
+                FactionFile.FactionIDs.The_Akatosh_Chantry,
+                FactionFile.FactionIDs.Akatosh,
+                FactionFile.FactionIDs.The_Order_of_Arkay,
+                FactionFile.FactionIDs.Arkay,
+                FactionFile.FactionIDs.The_House_of_Dibella,
+                FactionFile.FactionIDs.Dibella,
+                FactionFile.FactionIDs.The_Schools_of_Julianos,
+                FactionFile.FactionIDs.Julianos,
+                FactionFile.FactionIDs.The_Temple_of_Kynareth,
+                FactionFile.FactionIDs.Kynareth,
+                FactionFile.FactionIDs.The_Benevolence_of_Mara,
+                FactionFile.FactionIDs.Mara,
+                FactionFile.FactionIDs.The_Temple_of_Stendarr,
+                FactionFile.FactionIDs.Stendarr,
+                FactionFile.FactionIDs.The_Resolution_of_Zen,
+                FactionFile.FactionIDs.Zen
+            };
         }
 
         [Invoke(StateManager.StateTypes.Start, 0)]
@@ -59,14 +100,23 @@ namespace Assets.Scripts.Game.MacadaynuMods
             clientId = settings.GetString("SpotifyAppCredentials", "ClientId");
             clientSecret = settings.GetString("SpotifyAppCredentials", "ClientSecret");
             refreshToken = settings.GetString("SpotifyAppCredentials", "RefreshToken");
+            computerName = settings.GetString("SpotifyAppCredentials", "ComputerName");
             useTownMusic = settings.GetBool("PlaylistIds", "UseTownMusic");
             useNightExplorationMusic = settings.GetBool("PlaylistIds", "UseNightExplorationMusic");
+            useShopMusic = settings.GetBool("PlaylistIds", "UseOpenShopMusic");
+            useTempleMusic = settings.GetBool("PlaylistIds", "UseTempleMusic");
+            useMagesGuildMusic = settings.GetBool("PlaylistIds", "UseMagesGuildMusic");
+            useFightersGuildMusic = settings.GetBool("PlaylistIds", "UseFightersGuildMusic");
 
             AssignPlaylistId("Exploration", "3duUM5NBqB8OqIZNWt6W4Q", ref explorationPlaylistId);
             AssignPlaylistId("Dungeons", "5SN1OWk8oQ7KNDp5ZiUWql", ref dungeonPlaylistId);
             AssignPlaylistId("Taverns", "0M23q20iFObvPzht43bSmK", ref tavernPlaylistId);
             AssignPlaylistId("Towns", "2uCzDvmy1yvKbtua6QWEwG", ref townPlaylistId);
             AssignPlaylistId("NightExploration", "7ieTrY5xbsjDJ8ze63Pk1Z", ref explorationNightPlaylistId);
+            AssignPlaylistId("OpenShops", "3duUM5NBqB8OqIZNWt6W4Q", ref shopsPlaylistId);
+            AssignPlaylistId("Temples", "3duUM5NBqB8OqIZNWt6W4Q", ref templePlaylistId);
+            AssignPlaylistId("MagesGuilds", "3duUM5NBqB8OqIZNWt6W4Q", ref magesGuildPlaylistId);
+            AssignPlaylistId("FightersGuilds", "3duUM5NBqB8OqIZNWt6W4Q", ref fightersGuildPlaylistId);
         }
 
         private static void AssignPlaylistId(string area, string defaultPlaylistId, ref string playlistId)
@@ -101,6 +151,38 @@ namespace Assets.Scripts.Game.MacadaynuMods
             {
                 PlayPlaylistForCurrentLocation();
             }
+            // if entering an open shop
+            else if (useShopMusic && GameManager.Instance.PlayerEnterExit.IsPlayerInsideOpenShop)
+            {
+                PlayPlaylistForCurrentLocation();
+            }
+            // if entering a temple
+            else if (useTempleMusic && PlayerIsInFactionBuilding(templeFactions))//, args.DaggerfallInterior))
+            {
+                PlayPlaylistForCurrentLocation();
+            }
+            // if entering a mages guild
+            else if (useMagesGuildMusic && PlayerIsInFactionBuilding(magesGuildFactions))//, args.DaggerfallInterior))
+            {
+                PlayPlaylistForCurrentLocation();
+            }
+            // if entering a fighters guild
+            else if (useMagesGuildMusic && PlayerIsInFactionBuilding(fightersGuildFactions))//, args.DaggerfallInterior))
+            {
+                PlayPlaylistForCurrentLocation();
+            }
+        }
+
+        bool PlayerIsInFactionBuilding(List<FactionFile.FactionIDs> factionIds)//, DaggerfallInterior interior)
+        {
+            var interior = GameManager.Instance.PlayerEnterExit.Interior;
+
+            if (interior == null)
+            {
+                return false;
+            }
+
+            return factionIds.Contains((FactionFile.FactionIDs)interior.BuildingData.FactionId);
         }
 
         private void OnTransitionToExterior(PlayerEnterExit.TransitionEventArgs args)
@@ -108,7 +190,27 @@ namespace Assets.Scripts.Game.MacadaynuMods
             // if exiting a tavern
             if (isInsideTavern)
             {
-                PlayPlaylistForCurrentLocation(true);
+                PlayPlaylistForCurrentLocation(exitingTavern: true);
+            }
+            // if exiting an open shop
+            else if (useShopMusic && isInsideShop)
+            {
+                PlayPlaylistForCurrentLocation(exitingShop: true);
+            }
+            // if exiting a temple
+            else if (useTempleMusic && isInsideTemple)
+            {
+                PlayPlaylistForCurrentLocation(exitingTemple: true);
+            }
+            // if exiting a mages guild
+            else if (useMagesGuildMusic && isInsideMagesGuild)
+            {
+                PlayPlaylistForCurrentLocation(exitingMagesGuild: true);//, transition: args);
+            }
+            // if exiting a fighters guild
+            else if (useFightersGuildMusic && isInsideFightersGuild)
+            {
+                PlayPlaylistForCurrentLocation(exitingFightersGuild: true);//, transition: args);
             }
         }
 
@@ -131,9 +233,13 @@ namespace Assets.Scripts.Game.MacadaynuMods
         {
             if (useNightExplorationMusic
                 && !isInsideTavern
+                && !isInsideShop
+                && !isInsideTemple
+                && !isInsideMagesGuild
+                && !isInsideFightersGuild
                 && !GameManager.Instance.IsPlayerInsideDungeon)
             {
-                PlayPlaylistForCurrentLocation(true);
+                PlayPlaylistForCurrentLocation(true, true, true, true, true);
             }
         }
 
@@ -141,6 +247,7 @@ namespace Assets.Scripts.Game.MacadaynuMods
         {            
             if (useTownMusic)
             {
+                // if exiting a location and the current playlist is Town
                 var playerInfo = SpotifyAPI.GetCurrentlyPlayingInfo();
                 if (!string.IsNullOrWhiteSpace(playerInfo?.context?.external_urls?.spotify)
                     && playerInfo.context.external_urls.spotify.Split('/').Last() == townPlaylistId)
@@ -152,7 +259,13 @@ namespace Assets.Scripts.Game.MacadaynuMods
 
         private void OnEnterLocation(DaggerfallConnect.DFLocation location)
         {
-            if (useTownMusic)
+            // have to check not in certain locations as this event fires when loading a game
+            if (useTownMusic
+                && !isInsideTavern
+                && !isInsideShop
+                && !isInsideTemple
+                && !isInsideMagesGuild
+                && !isInsideFightersGuild)
             {
                 if (GameManager.Instance.PlayerGPS.IsPlayerInTown(true))
                 {
@@ -183,7 +296,8 @@ namespace Assets.Scripts.Game.MacadaynuMods
             PlayPlaylistForCurrentLocation();
         }
 
-        private void PlayPlaylistForCurrentLocation(bool exitingTavern = false)
+        private void PlayPlaylistForCurrentLocation(bool exitingTavern = false, bool exitingShop = false, bool exitingTemple = false,
+            bool exitingMagesGuild = false, bool exitingFightersGuild = false, PlayerEnterExit.TransitionEventArgs transition = null)
         {
             if (GameManager.Instance.IsPlayerInsideDungeon)
             {
@@ -197,6 +311,46 @@ namespace Assets.Scripts.Game.MacadaynuMods
                 SpotifyAPI.PlayPlaylist(tavernPlaylistId);
                 return;
             }
+
+            if (useShopMusic)
+            {
+                isInsideShop = !exitingShop && GameManager.Instance.PlayerEnterExit.IsPlayerInsideOpenShop;
+                if (isInsideShop)
+                {
+                    SpotifyAPI.PlayPlaylist(shopsPlaylistId);
+                    return;
+                }
+            }
+
+            if (useTempleMusic)
+            {
+                isInsideTemple = !exitingTemple && PlayerIsInFactionBuilding(templeFactions);//, transition.DaggerfallInterior);
+                if (isInsideTemple)
+                {
+                    SpotifyAPI.PlayPlaylist(templePlaylistId);
+                    return;
+                }
+            }
+
+            if (useMagesGuildMusic)
+            {
+                isInsideMagesGuild = !exitingMagesGuild && PlayerIsInFactionBuilding(magesGuildFactions);//, transition.DaggerfallInterior);
+                if (isInsideMagesGuild)
+                {
+                    SpotifyAPI.PlayPlaylist(magesGuildPlaylistId);
+                    return;
+                }
+            }
+
+            if (useFightersGuildMusic)
+            {
+                isInsideFightersGuild = !exitingFightersGuild && PlayerIsInFactionBuilding(fightersGuildFactions);//, transition.DaggerfallInterior);
+                if (isInsideFightersGuild)
+                {
+                    SpotifyAPI.PlayPlaylist(fightersGuildPlaylistId);
+                    return;
+                }
+            }            
 
             if (useTownMusic && GameManager.Instance.PlayerGPS.IsPlayerInTown(true))
             {

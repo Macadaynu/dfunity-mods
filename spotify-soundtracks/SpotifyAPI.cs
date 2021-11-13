@@ -31,14 +31,27 @@ namespace Assets.Scripts.Game.MacadaynuMods
 
             if (string.IsNullOrWhiteSpace(deviceId))
             {
-                var device = GetAvailableSpotifyDevices()?.devices?.FirstOrDefault(x => x.type == "Computer");
-                if (device == null || string.IsNullOrWhiteSpace(device.id))
+                var availableDevices = GetAvailableSpotifyDevices()?.devices?.Where(x => x.type == "Computer");
+                if (availableDevices == null || !availableDevices.Any())
                 {
                     Debug.Log("SPOTIFY SOUNDTRACKS: No computer device found");
                     return;
                 }
 
-                deviceId = device.id;
+                if (!string.IsNullOrWhiteSpace(SpotifyMusicMod.computerName))
+                {
+                    deviceId = availableDevices.FirstOrDefault(x => x.name == SpotifyMusicMod.computerName)?.id;
+
+                    if (string.IsNullOrWhiteSpace(deviceId))
+                    {
+                        Debug.Log($"SPOTIFY SOUNDTRACKS: No computer device found with name: {SpotifyMusicMod.computerName}");
+                        return;
+                    }
+                }
+                else
+                {
+                    deviceId = availableDevices.First().id;
+                }
             }
 
             var playlistItems = GetPlaylistItems(playlistId);
