@@ -1,6 +1,7 @@
 using Assets.Scripts.MacadaynuMods;
 using DaggerfallConnect;
 using DaggerfallConnect.Arena2;
+using DaggerfallConnect.Utility;
 using DaggerfallWorkshop;
 using DaggerfallWorkshop.Game;
 using DaggerfallWorkshop.Game.Entity;
@@ -16,6 +17,7 @@ using DaggerfallWorkshop.Utility;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 using UnityEngine;
 
 namespace Assets.Scripts.Game.MacadaynuMods
@@ -104,7 +106,7 @@ namespace Assets.Scripts.Game.MacadaynuMods
         public static float RayDistance = 3072 * MeshReader.GlobalScale;
         public static float doorCrouchingHeight = 1.65f;
         public static float predictionInterval = 0.0625f;
-        public static float stopDistance = 2.3f;
+        public static float stopDistance = 2.3f; //original value was 1.7f
         public const float pacifyActivationDistance = 300 * MeshReader.GlobalScale;
 
         bool showTradeSellWindow;
@@ -114,8 +116,13 @@ namespace Assets.Scripts.Game.MacadaynuMods
         static bool DeadFollowerNotifications;
         static bool LevelStreetwiseAndEtiquetteOnPacifyAttempt;
         static bool PlaySoundFXOnJoinParty;
+        static bool FriendlyFire;
+        static bool TalkModeRequired;
+        static bool RestAtInnsRequired;
 
         public Type SaveDataType { get { return typeof(LanguageSkillsOverhaulSaveData); } }
+
+        bool isTransitioning;
 
         #endregion
 
@@ -155,6 +162,8 @@ namespace Assets.Scripts.Game.MacadaynuMods
             DaggerfallUI.UIManager.OnWindowChange += UIManager_OnWindowChangeHandler;
             DaggerfallRestWindow.OnSleepEnd += DaggerfallRestWindow_OnSleepEnd;
             GameManager.OnEnemySpawn += OnEnemySpawn;
+            StreamingWorld.OnTeleportToCoordinates += OnTeleportToCoordinates;
+            PlayerEnterExit.OnRespawnerComplete += PlayerEnterExit_OnRespawnerComplete;
 
             LanguageSkillCommands.RegisterCommands();
 
@@ -163,10 +172,55 @@ namespace Assets.Scripts.Game.MacadaynuMods
             DeadFollowerNotifications = settings.GetBool("GeneralSettings", "DeadFollowerNotifications");
             LevelStreetwiseAndEtiquetteOnPacifyAttempt = settings.GetBool("GeneralSettings", "LevelStreetwiseAndEtiquetteOnPacifyAttempt");
             PlaySoundFXOnJoinParty = settings.GetBool("GeneralSettings", "PlaySoundFXOnJoinParty");
+
+            FriendlyFire = settings.GetBool("GeneralSettings", "FriendlyFire");
+            TalkModeRequired = settings.GetBool("GeneralSettings", "TalkModeRequired");
+            RestAtInnsRequired = settings.GetBool("GeneralSettings", "RestAtInnsRequired");
+
+            // Unity methods will not build with .dfmods, will have to update the instantiated objects at runtime instead
+            //if (FriendlyFire)
+            //{
+            //    string[] guids = AssetDatabase.FindAssets("t:Object", new[] { "Assets/Prefabs/Missiles" });
+
+            //    foreach (var guid in guids)
+            //    {
+            //        string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+            //        var prefab = PrefabUtility.LoadPrefabContents(assetPath);
+
+            //        if (prefab.GetComponent<FriendlyFire>() == null)
+            //        {
+            //            prefab.AddComponent<FriendlyFire>();
+            //            PrefabUtility.SaveAsPrefabAsset(prefab, assetPath);
+            //            PrefabUtility.UnloadPrefabContents(prefab);
+            //        }
+            //    }
+            //}
         }
 
         void Update()
         {
+            if (FriendlyFire)
+            {
+                var missile = FindObjectOfType<DaggerfallMissile>();
+
+                if (missile != null
+                    && missile.Caster == GameManager.Instance.PlayerEntityBehaviour
+                    && missile.gameObject.GetComponent<FriendlyFire>() == null)
+                {
+                    missile.gameObject.AddComponent<FriendlyFire>();
+                }
+
+                foreach (var follower in enemyFollowers)
+                {
+                    var enemyMotor = follower.GetComponent<EnemyMotor>();
+
+                    if (enemyMotor.IsHostile)
+                    {
+                        enemyMotor.IsHostile = false;
+                    }
+                }
+            }
+
             if (!InputManager.Instance.IsPaused)
             {
                 RemoveDeadFollowers();
@@ -175,13 +229,18 @@ namespace Assets.Scripts.Game.MacadaynuMods
                 {
                     lastEnemyClicked = null;
 
+                    if (TalkModeRequired && GameManager.Instance.PlayerActivate.CurrentMode != PlayerActivateModes.Talk)
+                    {
+                        return;
+                    }
+
                     if (!GameManager.Instance.PlayerEffectManager.HasReadySpell)
                     {
                         Ray ray = new Ray(mainCamera.transform.position, mainCamera.transform.forward);
 
                         // Test ray against scene
                         RaycastHit hit;
-                        bool hitSomething = Physics.Raycast(ray, out hit, RayDistance, playerLayerMask);
+                        bool hitSomething = Physics.Raycast(ray, out hit, RayDistance);
                         if (hitSomething)
                         {
                             DaggerfallEntityBehaviour mobileEnemyBehaviour = null;
@@ -451,8 +510,12 @@ namespace Assets.Scripts.Game.MacadaynuMods
                         var enemyFollower = enemyFollowers.Where(x => x == lastEnemyClicked.gameObject).FirstOrDefault();
                         if (enemyFollower != null)
                         {
+                            enemyFollower.layer = 11;
                             enemyFollower.transform.GetComponent<EnemyFollower>().isFollowing = false;
                             Physics.IgnoreCollision(enemyFollower.transform.GetComponent<CharacterController>(), GameManager.Instance.PlayerEntityBehaviour.transform.GetComponent<CharacterController>(), false);
+
+                            //int id = (enemyFollower.transform.GetComponent<DaggerfallEntityBehaviour>().Entity as EnemyEntity).MobileEnemy.ID;
+                            //enemyFollower.transform.GetComponent<DaggerfallEntityBehaviour>().Entity.Team = EnemyBasics.Enemies.First(x => x.ID == id).Team;
 
                             DaggerfallUI.MessageBox($"You part with {lastEnemyClicked.Entity.Name}");
 
@@ -515,6 +578,8 @@ namespace Assets.Scripts.Game.MacadaynuMods
                         var playerController = GameManager.Instance.PlayerEntityBehaviour.transform.GetComponent<CharacterController>();
 
                         Physics.IgnoreCollision(enemyController, playerController, true);
+
+                        lastEnemyClicked.Entity.Team = MobileTeams.PlayerAlly;
 
                         if (PlaySoundFXOnJoinParty)
                         {
@@ -665,17 +730,29 @@ namespace Assets.Scripts.Game.MacadaynuMods
             StorePartyForTransition();
         }
 
+        private void OnTeleportToCoordinates(DFPosition worldPos)
+        {
+            StorePartyForTransition();
+        }
+
         private void DaggerfallRestWindow_OnSleepEnd()
         {
-            if (GameManager.Instance.PlayerEnterExit.IsPlayerInsideTavern)
+            if (RestAtInnsRequired && !GameManager.Instance.PlayerEnterExit.IsPlayerInsideTavern)
             {
-                foreach (var follower in enemyFollowers)
-                {
-                    var followerEntity = follower.GetComponent<DaggerfallEntityBehaviour>().Entity;
-                    followerEntity.SetHealth(followerEntity.MaxHealth);
-                    followerEntity.SetMagicka(followerEntity.MaxMagicka);
-                }
+                return;
             }
+
+            foreach (var follower in enemyFollowers)
+            {
+                var followerEntity = follower.GetComponent<DaggerfallEntityBehaviour>().Entity;
+                followerEntity.SetHealth(followerEntity.MaxHealth);
+                followerEntity.SetMagicka(followerEntity.MaxMagicka);
+            }
+        }
+
+        private void PlayerEnterExit_OnRespawnerComplete()
+        {
+            SpawnParty();
         }
 
         private async void OnEnemySpawn(GameObject enemyObject)
@@ -691,82 +768,100 @@ namespace Assets.Scripts.Game.MacadaynuMods
 
         void StorePartyForTransition()
         {
-            enemyTypesToTransition.Clear();
-
-            foreach (var follower in enemyFollowers.Where(x => x != null))
+            if (!isTransitioning)
             {
-                var enemy = follower.GetComponent<DaggerfallEntityBehaviour>().Entity as EnemyEntity;
+                isTransitioning = true;
 
-                enemyTypesToTransition.Add(
-                    new EnemyToTransition(
-                        (MobileTypes)enemy.MobileEnemy.ID,
-                        enemy.MobileEnemy.Gender,
-                        enemy.CurrentHealth,
-                        enemy.CurrentMagicka,
-                        enemy.MaxHealth,
-                        enemy.MaxMagicka,
-                        enemy.Name));
+                enemyTypesToTransition.Clear();
+
+                foreach (var follower in enemyFollowers.Where(x => x != null))
+                {
+                    var enemy = follower.GetComponent<DaggerfallEntityBehaviour>().Entity as EnemyEntity;
+
+                    enemyTypesToTransition.Add(
+                        new EnemyToTransition(
+                            (MobileTypes)enemy.MobileEnemy.ID,
+                            enemy.MobileEnemy.Gender,
+                            enemy.CurrentHealth,
+                            enemy.CurrentMagicka,
+                            enemy.MaxHealth,
+                            enemy.MaxMagicka,
+                            enemy.Name));
+                }
+
+                foreach (var follower in enemyFollowers.Where(x => x != null))
+                {
+                    Destroy(follower);
+                }
+
+                enemyFollowers.Clear();
+
+                
             }
-
-            foreach (var follower in enemyFollowers.Where(x => x != null))
-            {
-                Destroy(follower);
-            }
-
-            enemyFollowers.Clear();
         }
 
         async void SpawnParty()
         {
-            await System.Threading.Tasks.Task.Delay(1000);
-
-            foreach (var enemyType in enemyTypesToTransition)
+            if (isTransitioning)
             {
-                // TODO: Must be able to find a surface below
-                var createdFoe = GameObjectHelper.CreateEnemy(
-                    "Enemy",
-                    enemyType.Type,
-                    GameManager.Instance.PlayerEnterExit.transform.position - GameManager.Instance.PlayerEnterExit.transform.forward, //+ (GameManager.Instance.PlayerEnterExit.transform.forward * count),
-                    enemyType.Gender,
-                    null,
-                    mobileReaction: MobileReactions.Passive);
+                await System.Threading.Tasks.Task.Delay(1000);
 
-                createdFoe.transform.SetParent(GameObjectHelper.GetBestParent());
-
-                DaggerfallEnemy enemy = createdFoe.GetComponent<DaggerfallEnemy>();
-                if (enemy)
+                foreach (var enemyType in enemyTypesToTransition)
                 {
-                    enemy.LoadID = DaggerfallUnity.NextUID;
+                    // TODO: Must be able to find a surface below
+                    var createdFoe = GameObjectHelper.CreateEnemy(
+                        "Enemy",
+                        enemyType.Type,
+                        GameManager.Instance.PlayerEnterExit.transform.position - GameManager.Instance.PlayerEnterExit.transform.forward, //+ (GameManager.Instance.PlayerEnterExit.transform.forward * count),
+                        enemyType.Gender,
+                        null,
+                        mobileReaction: MobileReactions.Passive);
+
+                    createdFoe.transform.SetParent(GameObjectHelper.GetBestParent());
+
+                    DaggerfallEnemy enemy = createdFoe.GetComponent<DaggerfallEnemy>();
+                    if (enemy)
+                    {
+                        enemy.LoadID = DaggerfallUnity.NextUID;
+                    }
+
+                    createdFoe.GetComponent<EnemyMotor>().enabled = false;
+
+                    var foeEntity = createdFoe.GetComponent<DaggerfallEntityBehaviour>().Entity;
+                    foeEntity.Team = MobileTeams.PlayerAlly;
+                    foeEntity.MaxHealth = enemyType.MaxHealth;
+                    foeEntity.MaxMagicka = enemyType.MaxMagicka;
+                    foeEntity.SetHealth(enemyType.CurrentHealth);
+                    foeEntity.SetMagicka(enemyType.CurrentMagicka);
+                    foeEntity.Name = enemyType.Name;
+
+                    if (FriendlyFire)
+                    {
+                        createdFoe.layer = 13;
+                    }
+
+                    createdFoe.gameObject.SetActive(true);
+
+                    enemyFollowers.Add(createdFoe);
+
+                    Physics.IgnoreCollision(createdFoe.transform.GetComponent<CharacterController>(), GameManager.Instance.PlayerEntityBehaviour.transform.GetComponent<CharacterController>(), true);
                 }
 
-                createdFoe.GetComponent<EnemyMotor>().enabled = false;
+                enemyTypesToTransition.Clear();
 
-                var foeEntity = createdFoe.GetComponent<DaggerfallEntityBehaviour>().Entity;
-                foeEntity.Team = MobileTeams.PlayerAlly;
-                foeEntity.MaxHealth = enemyType.MaxHealth;
-                foeEntity.MaxMagicka = enemyType.MaxMagicka;
-                foeEntity.SetHealth(enemyType.CurrentHealth);
-                foeEntity.SetMagicka(enemyType.CurrentMagicka);
-                foeEntity.Name = enemyType.Name;
+                foreach (var follower in enemyFollowers)
+                {
+                    follower.GetComponent<EnemyMotor>().enabled = true;
 
-                createdFoe.gameObject.SetActive(true);
+                    follower.transform.gameObject.AddComponent<EnemyFollower>();
+                    follower.transform.GetComponent<EnemyFollower>().SetupEnemy(follower.GetComponent<DaggerfallEntityBehaviour>());
+                    follower.transform.GetComponent<EnemyFollower>().isFollowing = true; // is this needed?
 
-                enemyFollowers.Add(createdFoe);
+                    follower.gameObject.SetActive(true);
+                }
 
-                Physics.IgnoreCollision(createdFoe.transform.GetComponent<CharacterController>(), GameManager.Instance.PlayerEntityBehaviour.transform.GetComponent<CharacterController>(), true);
-            }
+                isTransitioning = false;
 
-            enemyTypesToTransition.Clear();
-
-            foreach (var follower in enemyFollowers)
-            {
-                follower.GetComponent<EnemyMotor>().enabled = true;
-
-                follower.transform.gameObject.AddComponent<EnemyFollower>();
-                follower.transform.GetComponent<EnemyFollower>().SetupEnemy(follower.GetComponent<DaggerfallEntityBehaviour>());
-                follower.transform.GetComponent<EnemyFollower>().isFollowing = true; // is this needed?
-
-                follower.gameObject.SetActive(true);
             }
         }
 
@@ -932,13 +1027,20 @@ namespace Assets.Scripts.Game.MacadaynuMods
                     }
 
                     enemyEntity.Team = MobileTeams.PlayerAlly;
+                    (enemyMotor.GetComponent<DaggerfallEntityBehaviour>().Entity as EnemyEntity).SuppressInfighting = true;
                     enemyMotor.GetComponent<EnemySenses>().Target = null;
                     enemyMotor.GetComponent<EnemySenses>().SecondaryTarget = null;
+
+                    //await System.Threading.Tasks.Task.Delay(1000);
+
+                    //enemyEntity.Team = EnemyBasics.Enemies.First(x => x.ID == enemyEntity.MobileEnemy.ID).Team;
 
                     foreach (var follower in enemyFollowers)
                     {
                         (follower.GetComponent<DaggerfallEntityBehaviour>().Entity as EnemyEntity).SuppressInfighting = false;
                     }
+
+                    (enemyMotor.GetComponent<DaggerfallEntityBehaviour>().Entity as EnemyEntity).SuppressInfighting = false;
 
                     if (LevelStreetwiseAndEtiquetteOnPacifyAttempt || (languageSkill != DFCareer.Skills.Etiquette && languageSkill != DFCareer.Skills.Streetwise))
                     {
@@ -987,6 +1089,11 @@ namespace Assets.Scripts.Game.MacadaynuMods
 
         void FollowMe()
         {
+            if (FriendlyFire)
+            {
+                lastEnemyClicked.gameObject.layer = 13;
+            }
+
             enemyFollowers.Add(lastEnemyClicked.gameObject);
 
             foreach (var follower in enemyFollowers)
@@ -1089,10 +1196,17 @@ namespace Assets.Scripts.Game.MacadaynuMods
 
                     if (loadedEnemy != null)
                     {
+                        if (FriendlyFire)
+                        {
+                            loadedEnemy.gameObject.layer = 13;
+                        }
+
                         loadedEnemy.GetComponent<DaggerfallEntityBehaviour>().Entity.Name = enemy.Name;
                         enemyFollowers.Add(loadedEnemy.gameObject);
                         loadedEnemy.transform.gameObject.AddComponent<EnemyFollower>();
                         loadedEnemy.transform.GetComponent<EnemyFollower>().SetupEnemy(loadedEnemy.GetComponent<DaggerfallEntityBehaviour>());
+
+
 
                         Physics.IgnoreCollision(loadedEnemy.transform.GetComponent<CharacterController>(), GameManager.Instance.PlayerEntityBehaviour.transform.GetComponent<CharacterController>(), true);
                     }
