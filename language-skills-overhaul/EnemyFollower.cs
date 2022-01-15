@@ -53,7 +53,7 @@ namespace Assets.Scripts.MacadaynuMods
 
         private void FixedUpdate()
         {
-            if (motor != null && senses != null && !senses.TargetInSight && isFollowing)
+            if (LanguageSkillsOverhaulMod.enemyFollowers.Any(x => x == gameObject) && motor != null && senses != null && !senses.TargetInSight && isFollowing)
             {
                 FollowPlayer();
             }
