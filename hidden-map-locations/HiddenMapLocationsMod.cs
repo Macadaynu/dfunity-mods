@@ -12,8 +12,12 @@ using UnityEngine;
 using static DaggerfallWorkshop.Utility.ContentReader;
 using static DaggerfallConnect.DFRegion;
 using DaggerfallWorkshop.Game.Questing;
+using DaggerfallWorkshop.Game.Questing.Actions;
 using DaggerfallWorkshop.Game.Utility;
 using DaggerfallWorkshop.Game.Serialization;
+using DaggerfallWorkshop.Utility;
+using System.Text.RegularExpressions;
+using DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings;
 
 namespace Assets.MacadaynuMods.HiddenMapLocations
 {
@@ -35,6 +39,7 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
         public static HashSet<LocationTypes> revealedLocationTypes;
         public static Mod mod;
         public static HiddenMapLocationsMod instance;
+        static ModSettings settings;
         public Type SaveDataType { get { return typeof(HiddenMapLocationsSaveData); } }
 
         [Invoke(StateManager.StateTypes.Start, 0)]
@@ -52,9 +57,21 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
             // initiates mod message handler
             mod.MessageReceiver = DFModMessageReceiver;
 
+            settings = mod.GetSettings();
+
+            revealedLocationTypes = new HashSet<LocationTypes>();
+
+            AddRevealedLocationTypeFromSettings("Cities");
+            AddRevealedLocationTypeFromSettings("Taverns");
+            AddRevealedLocationTypeFromSettings("WealthyHomes");
+            AddRevealedLocationTypeFromSettings("PoorHomes");
+            AddRevealedLocationTypeFromSettings("Hamlets");
+            AddRevealedLocationTypeFromSettings("Villages");
+            AddRevealedLocationTypeFromSettings("Farms");
+            AddRevealedLocationTypeFromSettings("Temples");
+
             DaggerfallUnity.Instance.ItemHelper.RegisterItemUseHandler((int)MiscItems.Map, UseDungeonMap);
 
-            //TODO: Need to add start/load game events to add current location to dicovered locations
             QuestMachine.OnQuestStarted += QuestMachine_OnQuestStarted;
             PlayerGPS.OnEnterLocationRect += PlayerGPS_OnEnterLocationRect;
             DaggerfallUI.UIManager.OnWindowChange += UIManager_OnWindowChangeHandler;
@@ -70,11 +87,9 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
                 discoveredMapSummaries = new HashSet<MapSummary>();
             }
 
-            // TODO: get revealed locations from mod settings (no need for null check)
-            if (revealedLocationTypes == null)
-            {
-                revealedLocationTypes = new HashSet<LocationTypes> { LocationTypes.TownCity };
-            }
+            AddDefaultLocation("Betony", "Whitefort");
+            AddDefaultLocation("Isle of Balfiera", "Singbrugh");
+            AddDefaultLocation("Isle of Balfiera", "Blackhead");
 
             // Only override the Travel Map if Travel Options is not enabled
             Mod travelOptionsMod = ModManager.Instance.GetMod("Travel Options");
@@ -85,6 +100,12 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
             }
 
             UIWindowFactory.RegisterCustomUIWindow(UIWindowType.Talk, typeof(HiddenMapLocationsTalkWindow));
+        }
+
+        public void AddDefaultLocation(string regionName, string locationName)
+        {
+            var location = DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(regionName, locationName);
+            AddMapSummaryFromLocation(location);
         }
 
         public static bool UseDungeonMap(DaggerfallUnityItem item, ItemCollection collection)
@@ -167,37 +188,24 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
             }
         }
 
-        //// Go through every undiscovered location, and add it to the discovered locations if its a dungeon
-        //List<int> undiscoveredLocIdxs = new List<int>();
-        //for (int i = 0; i < currentRegion.LocationCount; i++)
-        //{
-        //    var mapId = currentRegion.MapTable[i].MapId;
-
-        //    if (!discoveredMapSummaries.Where(x => x.MapIndex == mapId).Any())
-        //    {
-        //        DFLocation location = DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(GameManager.Instance.PlayerGPS.CurrentRegionIndex, i);
-        //        var summary = GetMapSummaryFromLocation(location);
-        //        if (summary.HasValue && summary.Value.LocationType == DFRegion.LocationTypes.DungeonRuin)
-        //        {
-
-        //        }
-        //    }
-        //}
-
         static void QuestMachine_OnQuestStarted(Quest quest)
         {
-            var siteDetails = QuestMachine.Instance.GetAllActiveQuestSites().ToList();
-
-            foreach (var questSiteDetails in siteDetails.Where(x => x.questUID == quest.UID))
+            // story quests will be handled through quest actions (as some quests start silently)
+            if (!quest.QuestName.StartsWith("S0000") && !quest.QuestName.StartsWith("_BRISIEN"))
             {
-                // TODO: Maybe better if these checks are specifically for Grab an Ingredient?
-                var questItemSiteIsNewDungeon = questSiteDetails.questItemMarkers?.Where(x => x.placeSymbol != null && x.placeSymbol.Original == "_newdung_").Any() ?? false;
-                var questSpawnSiteIsNewDungeon = questSiteDetails.questSpawnMarkers?.Where(x => x.placeSymbol != null && x.placeSymbol.Original == "_newdung_").Any() ?? false;
-                if ((!questItemSiteIsNewDungeon && !questSpawnSiteIsNewDungeon)) //&& quest.QuestName.StartsWith("S0000"))
-                {
-                    DFLocation questLocation = DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(questSiteDetails.regionName, questSiteDetails.locationName);
+                var siteDetails = QuestMachine.Instance.GetAllActiveQuestSites().ToList();
 
-                    AddMapSummaryFromLocation(questLocation);
+                foreach (var questSiteDetails in siteDetails.Where(x => x.questUID == quest.UID))
+                {
+                    // TODO: Maybe better if these checks are specifically for Grab an Ingredient?
+                    var questItemSiteIsNewDungeon = questSiteDetails.questItemMarkers?.Where(x => x.placeSymbol != null && x.placeSymbol.Original == "_newdung_").Any() ?? false;
+                    var questSpawnSiteIsNewDungeon = questSiteDetails.questSpawnMarkers?.Where(x => x.placeSymbol != null && x.placeSymbol.Original == "_newdung_").Any() ?? false;
+                    if (!questItemSiteIsNewDungeon && !questSpawnSiteIsNewDungeon)
+                    {
+                        DFLocation questLocation = DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(questSiteDetails.regionName, questSiteDetails.locationName);
+
+                        AddMapSummaryFromLocation(questLocation);
+                    }
                 }
             }
         }
@@ -205,12 +213,6 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
         static void PlayerGPS_OnEnterLocationRect(DFLocation location)
         {
             AddMapSummaryFromLocation(location);
-        }
-
-        static void UIManager_OnWindowChangeHandler(object sender, EventArgs e)
-        {
-            // Could use the actions list on the Task class?
-            SiteDetails[] siteDetails = QuestMachine.Instance.GetAllActiveQuestSites();
         }
 
         static void OnNewGame()
@@ -223,16 +225,214 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
             AddCurrentLocationMapSummary();
         }
 
+        static int GetSayId(Quest quest, string source)
+        {
+            int sayId;
+
+            // Factory new say
+            Say say = new Say(quest);
+
+            // Source must match pattern
+            Match match = Regex.Match(source, say.Pattern);
+            if (!match.Success)
+                return 0; // return null?
+
+            sayId = Parser.ParseInt(match.Groups["id"].Value);
+
+            // Resolve static message back to ID
+            string idName = match.Groups["idName"].Value;
+            if (sayId == 0 && !string.IsNullOrEmpty(idName))
+            {
+                Table table = QuestMachine.Instance.StaticMessagesTable;
+                sayId = Parser.ParseInt(table.GetValue("id", idName));
+            }
+
+            return sayId;
+        }
+
+        static DFLocation? GetLocationFromPlaceNPC(string source, Quest quest)
+        {
+            // Factory new action
+            PlaceNpc placeNpc = new PlaceNpc(quest);
+
+            // Source must match pattern
+            Match match = Regex.Match(source, placeNpc.Pattern);
+            if (!match.Success)
+                return null;
+
+            var placeSymbol = new Symbol(match.Groups["aPlace"].Value);
+
+            Place place = quest.GetPlace(placeSymbol);
+
+            return DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(
+                place.SiteDetails.regionName, place.SiteDetails.locationName);
+        }
+
+        static DFLocation? GetLocationFromRevealLocation(string source, Quest quest)
+        {
+            // Factory new reveal location
+            RevealLocation revealLocation = new RevealLocation(quest);
+
+            // Source must match pattern
+            Match match = Regex.Match(source, revealLocation.Pattern);
+            if (!match.Success)
+                return null;
+
+            var placeSymbol = new Symbol(match.Groups["aPlace"].Value);
+
+            Place place = quest.GetPlace(placeSymbol);
+
+            return DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(
+                    place.SiteDetails.regionName, place.SiteDetails.locationName);
+        }
+
+        static DFLocation? GetLocationFromDialogLink(string source, Quest quest)
+        {
+            // Factory new dialog link
+            DialogLink dialogLink = new DialogLink(quest);
+
+            // Source must match pattern
+            Match match = Regex.Match(source, dialogLink.Pattern);
+            if (!match.Success)
+                return null;
+
+            if (!string.IsNullOrEmpty(match.Groups["aSite"].Value))
+            {
+                Place place = quest.GetPlace(new Symbol(match.Groups["aSite"].Value));
+
+                return DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(
+                        place.SiteDetails.regionName, place.SiteDetails.locationName);
+            }
+
+            return null;
+        }
+
+        static void UIManager_OnWindowChangeHandler(object sender, EventArgs e)
+        {
+            if (DaggerfallUI.UIManager.WindowCount > 0
+                && DaggerfallUI.UIManager.TopWindow.GetType() == typeof(DaggerfallMessageBox))
+            {
+                ulong[] uids = QuestMachine.Instance.GetAllActiveQuests();
+                foreach (ulong questUID in uids)
+                {
+                    Quest quest = QuestMachine.Instance.GetQuest(questUID);
+                    // if quest is a main quest
+                    //TODO: Make the Brisiena quest optional
+                    if (quest != null && (quest.QuestName.StartsWith("S0000") || quest.QuestName.StartsWith("_BRISIEN")))
+                    {
+                        // get all triggered tasks for this quest
+                        var triggeredTaskStates = quest.GetTaskStates().Where(x => x.set).ToList(); // remove ToList after debugging
+
+                        foreach (var taskState in triggeredTaskStates)
+                        {
+                            var task = quest.GetTask(taskState.symbol);
+                            foreach (var action in task.Actions)
+                            {
+                                Message questMessage = null;
+                                DFLocation? dfLocation = null;
+
+                                switch (action)
+                                {
+                                    case Say say:
+                                        questMessage = quest.GetMessage(GetSayId(quest, action.DebugSource));
+                                        break;
+                                    //case EndQuest endQuest:
+                                    //    questMessage = quest.GetMessage(GetEndQuestId(quest, action.DebugSource));
+                                    //    break;
+                                    //case TotingItemAndClickedNpc totingItemAndClickedNpc:
+                                    //    questMessage = quest.GetMessage(GetTotingItemAndClickedNPCId(quest, action.DebugSource));
+                                    //    break;
+                                    //case GivePc givePc:
+                                    //    questMessage = quest.GetMessage(GetGivePcId(quest, action.DebugSource));
+                                    //    break;
+                                    case RevealLocation revealLocation:
+                                        dfLocation = GetLocationFromRevealLocation(action.DebugSource, quest);
+                                        break;
+                                    case DialogLink dialogLink:
+                                        dfLocation = GetLocationFromDialogLink(action.DebugSource, quest);
+                                        break;
+                                    case PlaceNpc placeNpc:
+                                        dfLocation = GetLocationFromPlaceNPC(action.DebugSource, quest);
+                                        break;
+                                    default:
+                                        continue;
+                                }
+
+                                if (questMessage != null)
+                                {
+                                    var messageLocations = GetLocationsMentionedInMessage(questMessage);
+
+                                    foreach (var location in messageLocations)
+                                    {
+                                        AddMapSummaryFromLocation(location);
+                                    }
+                                }
+                                if (dfLocation.HasValue)
+                                {
+                                    AddMapSummaryFromLocation(dfLocation.Value);
+                                }
+                            }                            
+                        }
+                    }
+                }
+            }
+        }
+
+        static List<DFLocation> GetLocationsMentionedInMessage(Message message)
+        {
+            var questLocations = new List<DFLocation>();
+
+            QuestMacroHelper helper = new QuestMacroHelper();
+            QuestResource[] resources = helper.GetMessageResources(message);
+            
+            foreach (Place place in resources?.OfType<Place>())
+            {
+                questLocations.Add(DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(
+                    place.SiteDetails.regionName, place.SiteDetails.locationName));
+            }
+
+            return questLocations;
+        }
+
         static void AddCurrentLocationMapSummary()
         {
             AddMapSummaryFromLocation(GameManager.Instance.PlayerGPS.CurrentLocation);
+        }
 
-            //MapSummary currentLocationMapSummary;
-            //DFPosition mapPixel = GameManager.Instance.PlayerGPS.CurrentMapPixel;
-            //if (DaggerfallUnity.Instance.ContentReader.HasLocation(mapPixel.X, mapPixel.Y, out currentLocationMapSummary))
-            //{
-            //    discoveredMapSummaries.Add(currentLocationMapSummary);
-            //}
+        static void AddRevealedLocationTypeFromSettings(string locationType)
+        {
+            if (settings.GetBool("LocationTypesToReveal", locationType))
+            {
+                switch (locationType)
+                {
+                    case "Cities":
+                        revealedLocationTypes.Add(LocationTypes.TownCity);
+                        break;
+                    case "Taverns":
+                        revealedLocationTypes.Add(LocationTypes.Tavern);
+                        break;
+                    case "WealthyHomes":
+                        revealedLocationTypes.Add(LocationTypes.HomeWealthy);
+                        break;
+                    case "PoorHomes":
+                        revealedLocationTypes.Add(LocationTypes.HomePoor);
+                        break;
+                    case "Hamlets":
+                        revealedLocationTypes.Add(LocationTypes.TownHamlet);
+                        break;
+                    case "Villages":
+                        revealedLocationTypes.Add(LocationTypes.TownVillage);
+                        break;
+                    case "Farms":
+                        revealedLocationTypes.Add(LocationTypes.HomeFarms);
+                        break;
+                    case "Temples":
+                        revealedLocationTypes.Add(LocationTypes.ReligionTemple);
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
 
         static void DFModMessageReceiver(string message, object data, DFModMessageCallback callBack)
@@ -273,87 +473,5 @@ namespace Assets.MacadaynuMods.HiddenMapLocations
 
             discoveredMapSummaries = hiddenMapLocationsSaveData.DiscoveredMapSummaries;
         }
-
-        // TODO: be more selective with quest resource
-        //QuestResource[] placeResources = quest.GetAllResources(typeof(Place));
-        //foreach (QuestResource placeResource in placeResources)
-        //{
-        //    Place questPlace = (Place)placeResource;
-
-        //    DFLocation questLocation = DaggerfallUnity.Instance.ContentReader.MapFileReader.GetLocation(questPlace.SiteDetails.regionName, questPlace.SiteDetails.locationName);
-
-        //    AddMapSummaryFromLocation(questLocation);
-        //}
-
-        //if (sender.GetType() == typeof(UserInterfaceManager))
-        //{
-        //    var uiManager = (UserInterfaceManager)sender;
-
-        //    if (uiManager.TopWindow.GetType() == typeof(DaggerfallMessageBox))
-        //    {
-        //        var messageBox = (DaggerfallMessageBox)uiManager.TopWindow;
-
-        //        messageBox.
-        //    }
-
-        //    var text = uiManager.TopWindow.Value
-        //}
-
-        //if (!GameInProgress) //don't override non-game state when UI push
-        //    return;
-        //else if (DaggerfallUI.UIManager.WindowCount > 0)
-        //    ChangeState(StateTypes.UI);
-        //else if (!GameManager.IsGamePaused)
-        //    ChangeState(LastState);
-        //else
-        //{
-        //    ChangeState(StateTypes.None);
-        //}
-
-        //void RecordLocationFromMap(DaggerfallUnityItem item)
-        //{
-        //    const int mapTextId = 499;
-        //    PlayerGPS playerGPS = GameManager.Instance.PlayerGPS;
-
-        //    try
-        //    {
-        //        DFLocation revealedLocation = playerGPS.DiscoverRandomLocation();
-
-        //        if (string.IsNullOrEmpty(revealedLocation.Name))
-        //            throw new Exception();
-
-        //        playerGPS.LocationRevealedByMapItem = revealedLocation.Name;
-        //        GameManager.Instance.PlayerEntity.Notebook.AddNote(
-        //            TextManager.Instance.GetLocalizedText("readMap").Replace("%map", revealedLocation.Name));
-
-        //        DaggerfallMessageBox mapText = new DaggerfallMessageBox(uiManager, this);
-        //        mapText.SetTextTokens(DaggerfallUnity.Instance.TextProvider.GetRandomTokens(mapTextId));
-        //        mapText.ClickAnywhereToClose = true;
-        //        mapText.Show();
-        //    }
-        //    catch (Exception)
-        //    {
-        //        // Player has already descovered all valid locations in this region!
-        //        DaggerfallUI.MessageBox(TextManager.Instance.GetLocalizedText("readMapFail"));
-        //    }
-        //}
-
-        //public void AddQuestTopicWithInfoAndRumors(Quest quest)
-        //{
-        //    // Add RumorsDuringQuest rumor to rumor mill
-        //    Message message = quest.GetMessage((int)QuestMachine.QuestMessages.RumorsDuringQuest);
-        //    if (message != null)
-        //        AddOrReplaceQuestProgressRumor(quest.UID, message);
-
-        //    // Add topics for the places to see, people to meet and items to handle.
-        //    foreach (QuestResource resource in quest.GetAllResources())
-        //    {
-        //        QuestInfoResourceType type = GetQuestInfoResourceType(resource);
-        //        List<TextFile.Token[]> anyInfoAnswers = resource.GetMessage(resource.InfoMessageID);
-        //        List<TextFile.Token[]> rumorsAnswers = resource.GetMessage(resource.RumorsMessageID);
-
-        //        AddQuestTopicWithInfoAndRumors(quest.UID, resource, resource.Symbol.Name, type, anyInfoAnswers, rumorsAnswers);
-        //    }
-        //}
     }
 }
