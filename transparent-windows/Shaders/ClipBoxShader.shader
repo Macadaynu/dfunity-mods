@@ -1,10 +1,10 @@
 Shader "Custom/ClipBoxShader" {
     Properties{
         _MainTex("Albedo (RGB)", 2D) = "white" {}
-        _Glossiness("Smoothness", Range(0,1)) = 0.5
+        _Glossiness("Smoothness", Range(0,1)) = 0.0
         _Metallic("Metallic", Range(0,1)) = 0.0
         _EmissionMap("Emission Texture", 2D) = "black" {}
-        _Emission("Emission", float) = 0
+        _Emission("Emission", float) = 1
         [HDR] _EmissionColor("Emission color", Color) = (1,1,1,1)
     }
 
@@ -40,7 +40,7 @@ Shader "Custom/ClipBoxShader" {
                 o.Metallic = _Metallic;
                 o.Smoothness = _Glossiness;
                 o.Alpha = c.a;
-                o.Emission = _EmissionColor.rgb * tex2D(_EmissionMap, IN.uv_MainTex).a * _Emission;
+                o.Emission = tex2D(_EmissionMap, IN.uv_MainTex).rgb * _EmissionColor;
             }
             ENDCG
         }
