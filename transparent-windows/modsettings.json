@@ -1,0 +1,66 @@
+{
+    "Version": null,
+    "Sections": [
+        {
+            "Name": "GeneralSettings",
+            "Description": null,
+            "IsAdvanced": false,
+            "Keys": [
+                {
+                    "Value": true,
+                    "Name": "EnableFireplaceSFX",
+                    "Description": null,
+                    "$version": "v1",
+                    "$type": "DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings.ToggleKey"
+                },
+                {
+                    "Value": true,
+                    "Name": "EnableRainSFX",
+                    "Description": null,
+                    "$version": "v1",
+                    "$type": "DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings.ToggleKey"
+                },
+                {
+                    "Min": 0.0,
+                    "Max": 1.0,
+                    "Value": 0.5,
+                    "Name": "RainSFXVolume",
+                    "Description": null,
+                    "$version": "v1",
+                    "$type": "DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings.SliderFloatKey"
+                },
+                {
+                    "Min": 0.0,
+                    "Max": 1.0,
+                    "Value": 0.5,
+                    "Name": "FireplaceSFXVolume",
+                    "Description": null,
+                    "$version": "v1",
+                    "$type": "DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings.SliderFloatKey"
+                },
+                {
+                    "Value": {
+                        "r": 67,
+                        "g": 98,
+                        "b": 181,
+                        "a": 31
+                    },
+                    "Name": "GlassColour",
+                    "Description": null,
+                    "$version": "v1",
+                    "$type": "DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings.ColorKey"
+                },
+                {
+                    "Min": 0,
+                    "Max": 100,
+                    "Value": 34,
+                    "Name": "GlassOpacity",
+                    "Description": null,
+                    "$version": "v1",
+                    "$type": "DaggerfallWorkshop.Game.Utility.ModSupport.ModSettings.SliderIntKey"
+                }
+            ],
+            "$version": "v1"
+        }
+    ]
+}
