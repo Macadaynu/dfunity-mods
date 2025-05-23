@@ -1,0 +1,45 @@
+using System.Collections.Generic;
+
+public static class InteriorTextureNames
+{
+    public static List<string> InteriorTextures = new List<string>
+    {
+        "TEXTURE.011",
+        "TEXTURE.016",
+        "TEXTURE.028",
+        "TEXTURE.037",
+        "TEXTURE.040",
+        "TEXTURE.044",
+        "TEXTURE.060",
+        "TEXTURE.063",
+        "TEXTURE.066",
+        "TEXTURE.111",
+        "TEXTURE.116",
+        "TEXTURE.128",
+        "TEXTURE.137",
+        "TEXTURE.140",
+        "TEXTURE.144",
+        "TEXTURE.160",
+        "TEXTURE.163",
+        "TEXTURE.166",
+        "TEXTURE.171",
+        "TEXTURE.311",
+        "TEXTURE.316",
+        "TEXTURE.328",
+        "TEXTURE.337",
+        "TEXTURE.340",
+        "TEXTURE.344",
+        "TEXTURE.360",
+        "TEXTURE.363",
+        "TEXTURE.366",
+        "TEXTURE.411",
+        "TEXTURE.416",
+        "TEXTURE.428",
+        "TEXTURE.437",
+        "TEXTURE.440",
+        "TEXTURE.444",
+        "TEXTURE.460",
+        "TEXTURE.463",
+        "TEXTURE.466",
+    };
+}
